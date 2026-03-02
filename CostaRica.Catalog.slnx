@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CostaRica.Catalog.AppHost/CostaRica.Catalog.AppHost.csproj" />
+  <Project Path="CostaRica.Catalog.ServiceDefaults/CostaRica.Catalog.ServiceDefaults.csproj" />
+</Solution>
