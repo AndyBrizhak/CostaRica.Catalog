@@ -1,23 +1,22 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Добавляем контейнер PostgreSQL с расширением PostGIS
-// БЫЛО: var postgres = builder.AddPostgres("postgres")
-//          .WithImage("postgis/postgis")
-//          .WithImageTag("15-3.3")
-//          .WithDataVolume()
-//          .AddDatabase("catalogdb");
-
-// СТАЛО (с фиксацией порта для миграций):
+// Возвращаемся к автоматическим портам (удаляем WithEndpoint)
 var postgres = builder.AddPostgres("postgres")
     .WithImage("postgis/postgis")
     .WithImageTag("15-3.3")
-    .WithDataVolume()
-    .WithEndpoint(port: 5432, targetPort: 5432, name: "postgres"); // Фиксируем порт, чтобы PMC мог подключиться к localhost:5432
+    .WithDataVolume();
 
-// Создаем базу с именем, которое ожидает наш API ("postgresdb")
+// Фиксируем порт 5435, чтобы не искать его каждый раз в логах
+//var postgres = builder.AddPostgres("postgres")
+//    .WithImage("postgis/postgis")
+//    .WithImageTag("15-3.3")
+//    .WithDataVolume()
+//    .WithEndpoint(port: 5435, targetPort: 5432, name: "postgres");
+
+// Важно: оставляем имя "postgresdb", так как API ищет именно его
 var db = postgres.AddDatabase("postgresdb");
 
-// Подключаем проект API и передаем ему ссылку на базу данных
+// Подключаем проект API
 builder.AddProject<Projects.CostaRica_Api>("api")
        .WithReference(db);
 
