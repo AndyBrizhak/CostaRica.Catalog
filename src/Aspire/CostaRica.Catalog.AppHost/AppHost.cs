@@ -1,14 +1,23 @@
 var builder = DistributedApplication.CreateBuilder(args);
 
-// Добавляем контейнер PostgreSQL с расширением PostGIS
-// Это позволит нам использовать гео-поиск для бизнесов в Коста-Рике
+// Возвращаемся к автоматическим портам (удаляем WithEndpoint)
 var postgres = builder.AddPostgres("postgres")
-    .WithImage("postgis/postgis") // Используем образ с предустановленным PostGIS
-    .WithImageTag("15-3.3")       // Стабильная версия
-    .WithDataVolume()             // Данные не пропадут после выключения Docker
-    .AddDatabase("catalogdb");
+    .WithImage("postgis/postgis")
+    .WithImageTag("15-3.3")
+    .WithDataVolume();
 
-// Здесь позже появятся ссылки на API и Web:
-// builder.AddProject<Projects.CostaRica_Api>("api").WithReference(postgres);
+// Фиксируем порт 5435, чтобы не искать его каждый раз в логах
+//var postgres = builder.AddPostgres("postgres")
+//    .WithImage("postgis/postgis")
+//    .WithImageTag("15-3.3")
+//    .WithDataVolume()
+//    .WithEndpoint(port: 5435, targetPort: 5432, name: "postgres");
+
+// Важно: оставляем имя "postgresdb", так как API ищет именно его
+var db = postgres.AddDatabase("postgresdb");
+
+// Подключаем проект API
+builder.AddProject<Projects.CostaRica_Api>("api")
+       .WithReference(db);
 
 builder.Build().Run();

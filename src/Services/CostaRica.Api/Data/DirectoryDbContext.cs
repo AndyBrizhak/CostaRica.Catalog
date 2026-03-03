@@ -52,5 +52,39 @@ public class DirectoryDbContext : DbContext
             .HasMany(p => p.GoogleCategories)
             .WithMany()
             .UsingEntity(j => j.ToTable("BusinessGoogleCategories"));
+
+        // 3. Подключение расширения PostGIS
+        modelBuilder.HasPostgresExtension("postgis");
+
+        // 4. JSONB и География для BusinessPage
+        modelBuilder.Entity<BusinessPage>(entity =>
+        {
+            // Настройка SEO (уже исправлено ранее)
+            entity.OwnsOne(b => b.Seo, seo =>
+            {
+                seo.ToJson();
+                seo.OwnsMany(s => s.Hreflangs);
+            });
+
+            // Настройка контактов (тут только простые типы, доп. настроек не нужно)
+            entity.OwnsOne(b => b.Contacts, c => { c.ToJson(); });
+
+            // ИСПРАВЛЕНИЕ: Настройка расписания с вложенными интервалами
+            entity.OwnsMany(b => b.Schedule, schedule =>
+            {
+                schedule.ToJson();
+                // Явно указываем, что Intervals — это часть JSON-массива Schedule
+                schedule.OwnsMany(s => s.Intervals);
+            });
+
+            entity.Property(b => b.Location).HasColumnType("geography(Point, 4326)");
+        });
+
+        // 5. География для City
+        modelBuilder.Entity<City>(entity =>
+        {
+            entity.Property(c => c.Center).HasColumnType("geography(Point, 4326)");
+        });
+
     }
 }
