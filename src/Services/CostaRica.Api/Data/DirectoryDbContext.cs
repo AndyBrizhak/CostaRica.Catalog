@@ -59,9 +59,18 @@ public class DirectoryDbContext : DbContext
         // 4. JSONB и География для BusinessPage
         modelBuilder.Entity<BusinessPage>(entity =>
         {
-            entity.OwnsOne(b => b.Seo, seo => { seo.ToJson(); });
+            // Настройка SEO с вложенной коллекцией Hreflangs
+            entity.OwnsOne(b => b.Seo, seo =>
+            {
+                seo.ToJson();
+                // Явно указываем, что Hreflangs — это часть JSON-объекта SEO
+                seo.OwnsMany(s => s.Hreflangs);
+            });
+
             entity.OwnsOne(b => b.Contacts, c => { c.ToJson(); });
+
             entity.OwnsMany(b => b.Schedule, s => { s.ToJson(); });
+
             entity.Property(b => b.Location).HasColumnType("geography(Point, 4326)");
         });
 
