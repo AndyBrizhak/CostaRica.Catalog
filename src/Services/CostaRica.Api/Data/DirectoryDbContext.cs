@@ -52,5 +52,24 @@ public class DirectoryDbContext : DbContext
             .HasMany(p => p.GoogleCategories)
             .WithMany()
             .UsingEntity(j => j.ToTable("BusinessGoogleCategories"));
+
+        // 3. Подключение расширения PostGIS
+        modelBuilder.HasPostgresExtension("postgis");
+
+        // 4. JSONB и География для BusinessPage
+        modelBuilder.Entity<BusinessPage>(entity =>
+        {
+            entity.OwnsOne(b => b.Seo, seo => { seo.ToJson(); });
+            entity.OwnsOne(b => b.Contacts, c => { c.ToJson(); });
+            entity.OwnsMany(b => b.Schedule, s => { s.ToJson(); });
+            entity.Property(b => b.Location).HasColumnType("geography(Point, 4326)");
+        });
+
+        // 5. География для City
+        modelBuilder.Entity<City>(entity =>
+        {
+            entity.Property(c => c.Center).HasColumnType("geography(Point, 4326)");
+        });
+
     }
 }
