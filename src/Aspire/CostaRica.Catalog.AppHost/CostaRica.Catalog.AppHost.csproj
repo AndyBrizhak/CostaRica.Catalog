@@ -16,4 +16,11 @@
     <ProjectReference Include="..\..\Services\CostaRica.Api\CostaRica.Api.csproj" />
   </ItemGroup>
 
+  <Target Name="EnsureDockerIsRunning" BeforeTargets="BeforeBuild" Condition="'$(OS)' == 'Windows_NT'">
+    <PropertyGroup>
+      <DockerPath>C:\Program Files\Docker\Docker\Docker Desktop.exe</DockerPath>
+    </PropertyGroup>
+    <Exec Command="powershell -Command &quot;if (-not (Get-Process 'Docker Desktop' -ErrorAction SilentlyContinue)) { if (Test-Path '$(DockerPath)') { Write-Host '🚀 Docker Desktop не запущен. Запускаю...'; Start-Process '$(DockerPath)'; Start-Sleep -s 15 } else { Write-Warning '⚠️ Docker Desktop не найден по пути $(DockerPath)' } } else { Write-Host '✅ Docker Desktop уже работает.' }&quot;" IgnoreExitCode="true" />
+  </Target>
+  
 </Project>
