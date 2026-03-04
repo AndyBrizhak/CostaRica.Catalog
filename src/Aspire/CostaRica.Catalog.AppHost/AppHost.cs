@@ -18,6 +18,8 @@ var db = postgres.AddDatabase("postgresdb");
 
 // Подключаем проект API
 builder.AddProject<Projects.CostaRica_Api>("api")
-       .WithReference(db);
+       .WithReference(db)
+       // ЭТОТ МЕТОД ГОВОРИТ API ЖДАТЬ, ПОКА БАЗА НЕ СТАНЕТ HEALTHY
+       .WaitFor(db);
 
 builder.Build().Run();
