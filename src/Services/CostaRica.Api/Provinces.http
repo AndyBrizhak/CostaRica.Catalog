@@ -78,7 +78,7 @@ Accept: application/json
 
 ###
 
-@provinceId = ba1a92f3-80a6-4839-860c-88c9e205c9e3
+@provinceId = 4baa0d9c-c33b-4b4b-b382-d13b869be89d
 PUT {{host}}/api/provinces/{{provinceId}}
 Content-Type: {{contentType}}
 
