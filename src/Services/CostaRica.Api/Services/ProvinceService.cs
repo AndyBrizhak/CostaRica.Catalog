@@ -4,9 +4,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CostaRica.Api.Services;
 
-/// <summary>
-/// Реализация сервиса для работы с провинциями.
-/// </summary>
 public class ProvinceService(DirectoryDbContext db) : IProvinceService
 {
     public async Task<IEnumerable<ProvinceResponseDto>> GetAllAsync()
@@ -23,13 +20,15 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == id);
 
-        if (province is null) return null;
-
-        return new ProvinceResponseDto(province.Id, province.Name, province.Slug);
+        return province is null ? null : new ProvinceResponseDto(province.Id, province.Name, province.Slug);
     }
 
-    public async Task<ProvinceResponseDto> CreateAsync(ProvinceUpsertDto dto)
+    public async Task<ProvinceResponseDto?> CreateAsync(ProvinceUpsertDto dto)
     {
+        // Проверяем наличие дубликата по уникальному индексу Slug
+        var exists = await db.Provinces.AnyAsync(p => p.Slug == dto.Slug);
+        if (exists) return null;
+
         var province = new Province
         {
             Id = Guid.NewGuid(),
@@ -46,7 +45,6 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
     public async Task<bool> UpdateAsync(Guid id, ProvinceUpsertDto dto)
     {
         var province = await db.Provinces.FindAsync(id);
-
         if (province is null) return false;
 
         province.Name = dto.Name;

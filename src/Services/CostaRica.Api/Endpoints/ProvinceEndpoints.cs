@@ -1,6 +1,5 @@
-﻿using CostaRica.Api.Data;
-using CostaRica.Api.DTOs;
-using Microsoft.EntityFrameworkCore;
+﻿using CostaRica.Api.DTOs;
+using CostaRica.Api.Services;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -10,67 +9,44 @@ public static class ProvinceEndpoints
     {
         var group = routes.MapGroup("/api/provinces").WithTags("Provinces");
 
-        // GET: Список всех провинций
-        group.MapGet("/", async (DirectoryDbContext db) =>
+        group.MapGet("/", async (IProvinceService service) =>
         {
-            return await db.Provinces
-                .Select(p => new ProvinceResponseDto(p.Id, p.Name, p.Slug))
-                .ToListAsync();
+            var provinces = await service.GetAllAsync();
+            return Results.Ok(provinces);
         })
         .WithName("GetProvinces");
 
-        // GET: Получение по ID
-        group.MapGet("/{id:guid}", async (Guid id, DirectoryDbContext db) =>
+        group.MapGet("/{id:guid}", async (Guid id, IProvinceService service) =>
         {
-            return await db.Provinces.FindAsync(id)
-                is Province province
-                    ? Results.Ok(new ProvinceResponseDto(province.Id, province.Name, province.Slug))
-                    : Results.NotFound();
+            var result = await service.GetByIdAsync(id);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("GetProvinceById");
 
-        // POST: Создание
-        group.MapPost("/", async (ProvinceUpsertDto dto, DirectoryDbContext db) =>
+        group.MapPost("/", async (ProvinceUpsertDto dto, IProvinceService service) =>
         {
-            var province = new Province
+            var result = await service.CreateAsync(dto);
+
+            if (result is null)
             {
-                Id = Guid.NewGuid(),
-                Name = dto.Name,
-                Slug = dto.Slug
-            };
+                return Results.Conflict(new { error = $"Province with slug '{dto.Slug}' already exists." });
+            }
 
-            db.Provinces.Add(province);
-            await db.SaveChangesAsync();
-
-            return Results.Created($"/api/provinces/{province.Id}",
-                new ProvinceResponseDto(province.Id, province.Name, province.Slug));
+            return Results.Created($"/api/provinces/{result.Id}", result);
         })
         .WithName("CreateProvince");
 
-        // PUT: Обновление
-        group.MapPut("/{id:guid}", async (Guid id, ProvinceUpsertDto dto, DirectoryDbContext db) =>
+        group.MapPut("/{id:guid}", async (Guid id, ProvinceUpsertDto dto, IProvinceService service) =>
         {
-            var province = await db.Provinces.FindAsync(id);
-
-            if (province is null) return Results.NotFound();
-
-            province.Name = dto.Name;
-            province.Slug = dto.Slug;
-
-            await db.SaveChangesAsync();
-
-            return Results.NoContent();
+            var updated = await service.UpdateAsync(id, dto);
+            return updated ? Results.NoContent() : Results.NotFound();
         })
         .WithName("UpdateProvince");
 
-        // DELETE: Удаление
-        group.MapDelete("/{id:guid}", async (Guid id, DirectoryDbContext db) =>
+        group.MapDelete("/{id:guid}", async (Guid id, IProvinceService service) =>
         {
-            var affected = await db.Provinces
-                .Where(p => p.Id == id)
-                .ExecuteDeleteAsync();
-
-            return affected == 1 ? Results.NoContent() : Results.NotFound();
+            var deleted = await service.DeleteAsync(id);
+            return deleted ? Results.NoContent() : Results.NotFound();
         })
         .WithName("DeleteProvince");
     }
