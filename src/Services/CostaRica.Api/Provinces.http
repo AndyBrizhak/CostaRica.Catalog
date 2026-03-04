@@ -1,0 +1,92 @@
+﻿@hostname = localhost
+@port = 5046
+@host = http://{{hostname}}:{{port}}
+@contentType = application/json
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "San José",
+  "slug": "san-jose"
+}
+
+###
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "Alajuela",
+  "slug": "alajuela"
+}
+
+###
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "Cartago",
+  "slug": "cartago"
+}
+
+###
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "Heredia",
+  "slug": "heredia"
+}
+
+###
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "Guanacaste",
+  "slug": "guanacaste"
+}
+
+###
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "Puntarenas",
+  "slug": "puntarenas"
+}
+
+###
+
+POST {{host}}/api/provinces
+Content-Type: {{contentType}}
+
+{
+  "name": "Limón",
+  "slug": "limon"
+}
+
+###
+
+GET {{host}}/api/provinces
+Accept: application/json
+
+###
+
+@provinceId = ba1a92f3-80a6-4839-860c-88c9e205c9e3
+PUT {{host}}/api/provinces/{{provinceId}}
+Content-Type: {{contentType}}
+
+{
+  "name": "San José Updated",
+  "slug": "san-jose-upd"
+}
+
+###
+
+DELETE {{host}}/api/provinces/{{provinceId}}
