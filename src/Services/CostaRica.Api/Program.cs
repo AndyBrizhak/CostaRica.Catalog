@@ -1,5 +1,6 @@
 using CostaRica.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore; // Добавлено
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,6 +27,8 @@ app.MapDefaultEndpoints();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    // Добавляем Scalar по адресу /scalar/v1
+    app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();

@@ -18,6 +18,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL.NetTopologySuite" Version="10.0.0" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.12.54" />
     <PackageReference Include="SixLabors.ImageSharp.Web" Version="3.2.0" />
   </ItemGroup>
 
