@@ -1,6 +1,7 @@
 using CostaRica.Api.Data;
+using CostaRica.Api.Endpoints; // Добавлено
 using Microsoft.EntityFrameworkCore;
-using Scalar.AspNetCore; // Добавлено
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,29 +15,23 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// --- ДОБАВЛЕННЫЙ БЛОК ---
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<DirectoryDbContext>();
     await db.Database.MigrateAsync();
 }
-// ------------------------
 
 app.MapDefaultEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
-    // Добавляем Scalar по адресу /scalar/v1
     app.MapScalarApiReference();
 }
 
 app.UseHttpsRedirection();
 
-app.MapGet("/api/provinces", async (DirectoryDbContext db) =>
-{
-    return await db.Provinces.ToListAsync();
-})
-.WithName("GetProvinces");
+// Регистрируем наши эндпоинты (вместо старого MapGet)
+app.MapProvinceEndpoints();
 
 app.Run();
