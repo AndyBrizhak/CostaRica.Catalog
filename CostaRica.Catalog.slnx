@@ -1,11 +1,12 @@
 <Solution>
-  <Folder Name="/Aspire/">
+  <Folder Name="/Mobile/" />
+  <Folder Name="/src/" />
+  <Folder Name="/src/Aspire/">
     <Project Path="src/Aspire/CostaRica.Catalog.AppHost/CostaRica.Catalog.AppHost.csproj" />
     <Project Path="src/Aspire/CostaRica.Catalog.ServiceDefaults/CostaRica.Catalog.ServiceDefaults.csproj" />
   </Folder>
-  <Folder Name="/Mobile/" />
-  <Folder Name="/Services/">
-    <Project Path="src/Services/CostaRica.Api/CostaRica.Api.csproj" />
+  <Folder Name="/src/Backend/">
+    <Project Path="src/Backend/CostaRica.Api/CostaRica.Api.csproj" />
   </Folder>
   <Folder Name="/Tests/" />
 </Solution>
