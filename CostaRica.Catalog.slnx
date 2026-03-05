@@ -8,5 +8,8 @@
   <Folder Name="/src/Backend/">
     <Project Path="src/Backend/CostaRica.Api/CostaRica.Api.csproj" />
   </Folder>
-  <Folder Name="/Tests/" />
+  <Folder Name="/Tests/">
+    <Project Path="tests/CostaRica.Api.Tests.Integration/CostaRica.Api.Tests.Integration.csproj" Id="10a2b660-0292-477e-8bc0-9e68dd5f4036" />
+    <Project Path="tests/CostaRica.Api.Tests.Unit/CostaRica.Api.Tests.Unit.csproj" Id="140e17fb-676c-4386-b026-ed3d8525e956" />
+  </Folder>
 </Solution>
