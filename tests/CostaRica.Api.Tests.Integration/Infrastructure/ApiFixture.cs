@@ -1,31 +1,26 @@
 ﻿using Aspire.Hosting;
 using Aspire.Hosting.Testing;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace CostaRica.Api.Tests.Integration.Infrastructure;
 
-// Этот класс отвечает за запуск ВСЕГО решения (AppHost + API + DB) один раз для группы тестов
-public class ApiFixture : IAsyncDisposable
+public class ApiFixture : IAsyncLifetime
 {
     private DistributedApplication? _app;
     private HttpClient? _httpClient;
 
     public HttpClient HttpClient => _httpClient ?? throw new Exception("Fixture not initialized");
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
-        // Создаем биbuilder для тестового запуска AppHost
+        // Создаем билдер и СРАЗУ говорим ему пропустить тома
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.CostaRica_Catalog_AppHost>();
-
-        // Здесь можно подменить настройки, если нужно, например:
-        // appHost.Services.Configure<SomeOptions>(...)
+        appHost.Configuration["SkipVolumes"] = "true";
 
         _app = await appHost.BuildAsync();
 
-        // Запускаем все ресурсы (базу, API)
+        // Запускаем всё. Теперь Aspire точно знает, что делать.
         await _app.StartAsync();
 
-        // Создаем клиент, который знает, на каком порту поднялось наше API внутри Aspire
         _httpClient = _app.CreateHttpClient("api");
     }
 
