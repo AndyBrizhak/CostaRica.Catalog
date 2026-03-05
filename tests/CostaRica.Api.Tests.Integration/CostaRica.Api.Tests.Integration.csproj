@@ -17,6 +17,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" Version="8.8.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.3" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
@@ -28,6 +30,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Aspire\CostaRica.Catalog.AppHost\CostaRica.Catalog.AppHost.csproj" />
+    <ProjectReference Include="..\..\src\Backend\CostaRica.Api\CostaRica.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
