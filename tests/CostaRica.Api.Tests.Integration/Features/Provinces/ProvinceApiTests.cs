@@ -30,4 +30,32 @@ public class ProvinceApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
 
         response.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);
     }
+
+    [Fact]
+    public async Task CreateProvince_ReturnsConflict_WhenSlugExists()
+    {
+        // Arrange
+        var client = fixture.HttpClient;
+        var slug = $"conflict-slug-{Guid.NewGuid().ToString()[..4]}";
+        var dto = new ProvinceUpsertDto("Original", slug);
+
+        // Сначала создаем первую
+        await client.PostAsJsonAsync("/api/provinces", dto);
+
+        // Act - Пытаемся создать вторую с тем же слагом
+        var response = await client.PostAsJsonAsync("/api/provinces", dto);
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+    }
+
+    [Fact]
+    public async Task GetProvinceBySlug_ReturnsNotFound_WhenSlugDoesNotExist()
+    {
+        // Act
+        var response = await fixture.HttpClient.GetAsync("/api/provinces/non-existent-slug");
+
+        // Assert
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+    }
 }
