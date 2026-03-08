@@ -1,6 +1,4 @@
-﻿using NetTopologySuite.Geometries;
-
-namespace CostaRica.Api.Data;
+﻿namespace CostaRica.Api.Data;
 
 public class City
 {
@@ -15,9 +13,6 @@ public class City
     // Внешний ключ на Провинцию
     public Guid ProvinceId { get; set; }
 
-    // Навигационное свойство (позволит делать .Include(c => c.Province))
+    // Навигационное свойство
     public Province? Province { get; set; }
-
-    // Координаты центра города (Nullable, как мы и решили)
-    public Point? Center { get; set; }
 }
