@@ -6,7 +6,8 @@
 public record ProvinceResponseDto(
     Guid Id,
     string Name,
-    string Slug);
+    string Slug,
+    IEnumerable<CityResponseDto>? Cities = null);
 
 /// <summary>
 /// DTO для создания или обновления провинции (Create/Update)
