@@ -1,6 +1,6 @@
 using CostaRica.Api.Data;
 using CostaRica.Api.Endpoints;
-using CostaRica.Api.Services; // Подключаем пространство имен с IProvinceService и ProvinceService
+using CostaRica.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
 
@@ -12,13 +12,13 @@ builder.AddServiceDefaults();
 // 2. Настройка базы данных PostgreSQL
 builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextOptions: options =>
 {
+    // Используем NetTopologySuite для работы с PostGIS (необходим для BusinessPage.Location)
     options.UseNpgsql(o => o.UseNetTopologySuite());
 });
 
 // 3. РЕГИСТРАЦИЯ СЕРВИСОВ (Dependency Injection)
-// Добавляем наш сервис в контейнер. 
-// Scoped гарантирует создание нового экземпляра на каждый HTTP-запрос.
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
+builder.Services.AddScoped<ICityService, CityService>(); // Регистрация сервиса городов
 
 // 4. Генерация OpenAPI документации
 builder.Services.AddOpenApi();
@@ -44,10 +44,8 @@ if (app.Environment.IsDevelopment())
     app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
 }
 
-app.UseHttpsRedirection();
-
-// 7. Регистрация эндпоинтов
-// В следующем шаге мы изменим этот метод, чтобы он использовал IProvinceService
+// 7. РЕГИСТРАЦИЯ ЭНДПОИНТОВ
 app.MapProvinceEndpoints();
+app.MapCityEndpoints(); // Регистрация эндпоинтов городов
 
 app.Run();
