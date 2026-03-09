@@ -18,7 +18,7 @@ builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextO
 
     // --- ВРЕМЕННЫЙ БЛОК ДЛЯ СОЗДАНИЯ МИГРАЦИИ ---
     // Игнорируем проверку на наличие изменений в модели, чтобы приложение не падало при старте
-    options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+    //options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
     // --------------------------------------------
 });
 

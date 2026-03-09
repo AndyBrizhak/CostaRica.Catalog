@@ -3,21 +3,18 @@ using System;
 using CostaRica.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace CostaRica.Api.Data.Migrations
+namespace CostaRica.Api.Migrations
 {
     [DbContext(typeof(DirectoryDbContext))]
-    [Migration("20260308083644_AddCitiesModule")]
-    partial class AddCitiesModule
+    partial class DirectoryDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -510,9 +507,9 @@ namespace CostaRica.Api.Data.Migrations
             modelBuilder.Entity("CostaRica.Api.Data.Tag", b =>
                 {
                     b.HasOne("CostaRica.Api.Data.TagGroup", "TagGroup")
-                        .WithMany()
+                        .WithMany("Tags")
                         .HasForeignKey("TagGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("TagGroup");
@@ -521,6 +518,11 @@ namespace CostaRica.Api.Data.Migrations
             modelBuilder.Entity("CostaRica.Api.Data.Province", b =>
                 {
                     b.Navigation("Cities");
+                });
+
+            modelBuilder.Entity("CostaRica.Api.Data.TagGroup", b =>
+                {
+                    b.Navigation("Tags");
                 });
 #pragma warning restore 612, 618
         }
