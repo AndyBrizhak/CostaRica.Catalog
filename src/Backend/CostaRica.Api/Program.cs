@@ -16,15 +16,17 @@ builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextO
     // Используем NetTopologySuite для работы с PostGIS (необходим для BusinessPage.Location)
     options.UseNpgsql(o => o.UseNetTopologySuite());
 
-    // --- ВРЕМЕННЫЙ БЛОК ДЛЯ СОЗДАНИЯ МИГРАЦИИ ---
-    // Игнорируем проверку на наличие изменений в модели, чтобы приложение не падало при старте
-    //options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-    // --------------------------------------------
+    // Подавление предупреждения закомментировано, так как миграции синхронизированы
+    // options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
 });
 
 // 3. РЕГИСТРАЦИЯ СЕРВИСОВ (Dependency Injection)
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
 builder.Services.AddScoped<ICityService, CityService>();
+
+// Новые сервисы для работы с тегами
+builder.Services.AddScoped<ITagGroupService, TagGroupService>();
+builder.Services.AddScoped<ITagService, TagService>();
 
 // 4. Генерация OpenAPI документации
 builder.Services.AddOpenApi();
@@ -66,17 +68,14 @@ using (var scope = app.Services.CreateScope())
 
 app.MapDefaultEndpoints();
 
-// 6. Настройки среды разработки
+// 6. Подключение эндпоинтов модулей
+app.MapTagEndpoints(); // Активируем API тегов и групп
+
+// 7. Настройки среды разработки
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
-
-    app.MapGet("/", () => Results.Redirect("/scalar/v1")).ExcludeFromDescription();
 }
-
-// 7. РЕГИСТРАЦИЯ ЭНДПОИНТОВ
-app.MapProvinceEndpoints();
-app.MapCityEndpoints();
 
 app.Run();
