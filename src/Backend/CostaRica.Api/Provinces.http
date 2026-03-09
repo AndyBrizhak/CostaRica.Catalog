@@ -1,10 +1,9 @@
-﻿@hostname = localhost
-@port = 5046
-@host = http://{{hostname}}:{{port}}
-@contentType = application/json
+﻿@base_url = http://localhost:5046
 
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+### 1. Создание всех 7 провинций
+# @name createSanJose
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "San José",
@@ -12,9 +11,9 @@ Content-Type: {{contentType}}
 }
 
 ###
-
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+# @name createAlajuela
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "Alajuela",
@@ -22,9 +21,9 @@ Content-Type: {{contentType}}
 }
 
 ###
-
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+# @name createCartago
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "Cartago",
@@ -32,9 +31,9 @@ Content-Type: {{contentType}}
 }
 
 ###
-
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+# @name createHeredia
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "Heredia",
@@ -42,9 +41,9 @@ Content-Type: {{contentType}}
 }
 
 ###
-
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+# @name createGuanacaste
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "Guanacaste",
@@ -52,9 +51,9 @@ Content-Type: {{contentType}}
 }
 
 ###
-
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+# @name createPuntarenas
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "Puntarenas",
@@ -62,31 +61,21 @@ Content-Type: {{contentType}}
 }
 
 ###
-
-POST {{host}}/api/provinces
-Content-Type: {{contentType}}
+# @name createLimon
+POST {{base_url}}/api/provinces
+Content-Type: application/json
 
 {
   "name": "Limón",
   "slug": "limon"
 }
 
-###
+### 2. Проверка списка всех провинций
+GET {{base_url}}/api/provinces
 
-GET {{host}}/api/provinces
-Accept: application/json
+### 3. Проверка списка с городами
+GET {{base_url}}/api/provinces?includeCities=true
 
-###
+### 4. Поиск по Slug (новые возможности)
+GET {{base_url}}/api/provinces/slug/cartago?includeCities=true
 
-@provinceId = 4baa0d9c-c33b-4b4b-b382-d13b869be89d
-PUT {{host}}/api/provinces/{{provinceId}}
-Content-Type: {{contentType}}
-
-{
-  "name": "San José Updated",
-  "slug": "san-jose-upd"
-}
-
-###
-
-DELETE {{host}}/api/provinces/{{provinceId}}

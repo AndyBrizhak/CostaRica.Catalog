@@ -6,26 +6,75 @@ namespace CostaRica.Api.Services;
 
 public class ProvinceService(DirectoryDbContext db) : IProvinceService
 {
-    public async Task<IEnumerable<ProvinceResponseDto>> GetAllAsync()
+    public async Task<IEnumerable<ProvinceResponseDto>> GetAllAsync(bool includeCities = false)
     {
-        return await db.Provinces
-            .AsNoTracking()
-            .Select(p => new ProvinceResponseDto(p.Id, p.Name, p.Slug))
-            .ToListAsync();
+        var query = db.Provinces.AsNoTracking().AsQueryable();
+
+        if (includeCities)
+        {
+            query = query.Include(p => p.Cities);
+        }
+
+        var provinces = await query.ToListAsync();
+
+        return provinces.Select(p => new ProvinceResponseDto(
+            p.Id,
+            p.Name,
+            p.Slug,
+            includeCities
+                ? p.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId))
+                : null
+        ));
     }
 
-    public async Task<ProvinceResponseDto?> GetByIdAsync(Guid id)
+    public async Task<ProvinceResponseDto?> GetByIdAsync(Guid id, bool includeCities = false)
     {
-        var province = await db.Provinces
-            .AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == id);
+        var query = db.Provinces.AsNoTracking().AsQueryable();
 
-        return province is null ? null : new ProvinceResponseDto(province.Id, province.Name, province.Slug);
+        if (includeCities)
+        {
+            query = query.Include(p => p.Cities);
+        }
+
+        var province = await query.FirstOrDefaultAsync(p => p.Id == id);
+
+        if (province is null) return null;
+
+        return new ProvinceResponseDto(
+            province.Id,
+            province.Name,
+            province.Slug,
+            includeCities
+                ? province.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId))
+                : null
+        );
+    }
+
+    public async Task<ProvinceResponseDto?> GetBySlugAsync(string slug, bool includeCities = false)
+    {
+        var query = db.Provinces.AsNoTracking().AsQueryable();
+
+        if (includeCities)
+        {
+            query = query.Include(p => p.Cities);
+        }
+
+        var province = await query.FirstOrDefaultAsync(p => p.Slug == slug);
+
+        if (province is null) return null;
+
+        return new ProvinceResponseDto(
+            province.Id,
+            province.Name,
+            province.Slug,
+            includeCities
+                ? province.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId))
+                : null
+        );
     }
 
     public async Task<ProvinceResponseDto?> CreateAsync(ProvinceUpsertDto dto)
     {
-        // Проверяем наличие дубликата по уникальному индексу Slug
         var exists = await db.Provinces.AnyAsync(p => p.Slug == dto.Slug);
         if (exists) return null;
 
@@ -56,10 +105,13 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
 
     public async Task<bool> DeleteAsync(Guid id)
     {
-        var affected = await db.Provinces
-            .Where(p => p.Id == id)
-            .ExecuteDeleteAsync();
+        var province = await db.Provinces.FindAsync(id);
+        if (province is null) return false;
 
-        return affected > 0;
+        // Помним, что в DbContext настроен DeleteBehavior.Restrict, 
+        // так что если города есть, SaveChangesAsync выбросит исключение.
+        db.Provinces.Remove(province);
+        await db.SaveChangesAsync();
+        return true;
     }
 }

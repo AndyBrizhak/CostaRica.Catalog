@@ -9,4 +9,7 @@ public class Province
 
     // SEO-слаг для URL, например: "guanacaste"
     public string Slug { get; set; } = string.Empty;
+
+    // Коллекция городов в этой провинции
+    public ICollection<City> Cities { get; set; } = new List<City>();
 }

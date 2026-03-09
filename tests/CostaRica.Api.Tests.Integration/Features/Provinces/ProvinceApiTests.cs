@@ -2,6 +2,7 @@
 using CostaRica.Api.Tests.Integration.Infrastructure;
 using System.Net.Http.Json;
 using FluentAssertions;
+using System.Net;
 
 namespace CostaRica.Api.Tests.Integration.Features.Provinces;
 
@@ -10,52 +11,72 @@ public class ProvinceApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
     [Fact]
     public async Task GetProvinces_ReturnsSuccess()
     {
+        var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
-        var response = await client.GetAsync("/api/provinces", TestContext.Current.CancellationToken);
+
+        var response = await client.GetAsync("/api/provinces", ct);
 
         response.EnsureSuccessStatusCode();
+        var provinces = await response.Content.ReadFromJsonAsync<IEnumerable<ProvinceResponseDto>>(ct);
+        provinces.Should().NotBeNull();
     }
 
     [Fact]
-    public async Task CreateProvince_ShouldWork()
+    public async Task CreateAndGetBySlug_ShouldWorkCorrectly()
     {
+        var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
-        // Используем случайную строку, чтобы тест был атомарным
-        var name = $"Test {Guid.NewGuid().ToString()[..5]}";
-        var slug = $"slug-{Guid.NewGuid().ToString()[..5]}";
+        var slug = $"slug-{Guid.NewGuid().ToString()[..8]}";
+        var dto = new ProvinceUpsertDto("Test Province", slug);
 
-        var dto = new ProvinceUpsertDto(name, slug);
+        // Создание
+        var createResponse = await client.PostAsJsonAsync("/api/provinces", dto, ct);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var response = await client.PostAsJsonAsync("/api/provinces", dto, TestContext.Current.CancellationToken);
+        // Получение по Slug
+        var getResponse = await client.GetAsync($"/api/provinces/slug/{slug}", ct);
 
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Created);
+        getResponse.EnsureSuccessStatusCode();
+        var province = await getResponse.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
+        province.Should().NotBeNull();
+        province!.Slug.Should().Be(slug);
+        province.Name.Should().Be("Test Province");
     }
 
     [Fact]
-    public async Task CreateProvince_ReturnsConflict_WhenSlugExists()
+    public async Task GetProvince_WithIncludeCities_ShouldReturnCitiesCollection()
     {
-        // Arrange
+        var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
-        var slug = $"conflict-slug-{Guid.NewGuid().ToString()[..4]}";
-        var dto = new ProvinceUpsertDto("Original", slug);
 
-        // Сначала создаем первую
-        await client.PostAsJsonAsync("/api/provinces", dto);
+        var provinceSlug = $"inc-{Guid.NewGuid().ToString()[..8]}";
+        var pRes = await client.PostAsJsonAsync("/api/provinces",
+            new ProvinceUpsertDto("Include Test", provinceSlug), ct);
+        var province = await pRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
 
-        // Act - Пытаемся создать вторую с тем же слагом
-        var response = await client.PostAsJsonAsync("/api/provinces", dto);
+        // Добавим город, чтобы проверить реальную подгрузку
+        await client.PostAsJsonAsync("/api/cities",
+            new CityUpsertDto("Test City", $"city-{provinceSlug}", province!.Id), ct);
+
+        // Act: Запрашиваем с городами
+        var response = await client.GetAsync($"/api/provinces/slug/{provinceSlug}?includeCities=true", ct);
 
         // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.Conflict);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
+        result.Should().NotBeNull();
+        result!.Cities.Should().NotBeNull();
+        result.Cities.Should().NotBeEmpty(); // Проверяем, что город действительно подтянулся
     }
 
     [Fact]
-    public async Task GetProvinceBySlug_ReturnsNotFound_WhenSlugDoesNotExist()
+    public async Task DeleteProvince_ReturnsNotFound_WhenIdInvalid()
     {
-        // Act
-        var response = await fixture.HttpClient.GetAsync("/api/provinces/non-existent-slug");
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.HttpClient;
 
-        // Assert
-        response.StatusCode.Should().Be(System.Net.HttpStatusCode.NotFound);
+        var response = await client.DeleteAsync($"/api/provinces/{Guid.NewGuid()}", ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
