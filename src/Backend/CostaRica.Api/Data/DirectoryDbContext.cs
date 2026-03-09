@@ -31,32 +31,31 @@ public class DirectoryDbContext : DbContext
 
         // 2. Настройка связей
 
-        // Город -> Провинция (Many-to-One)
+        // Город -> Провинция (Restrict: нельзя удалить провинцию, если в ней есть города)
         modelBuilder.Entity<City>()
             .HasOne(c => c.Province)
             .WithMany(p => p.Cities)
             .HasForeignKey(c => c.ProvinceId)
-            // ЗАПРЕТ каскадного удаления: нельзя удалить провинцию, если в ней есть города
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Тег -> Группа (Many-to-One)
+        // Теги -> Группа (Restrict: нельзя удалить группу, если в ней есть теги)
         modelBuilder.Entity<Tag>()
             .HasOne(t => t.TagGroup)
-            .WithMany() // В TagGroup нет коллекции Tags
+            .WithMany(tg => tg.Tags)
             .HasForeignKey(t => t.TagGroupId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Бизнес-страница -> Провинция и Город
         modelBuilder.Entity<BusinessPage>()
-            .HasOne(b => b.Province)
+            .HasOne(p => p.Province)
             .WithMany()
-            .HasForeignKey(b => b.ProvinceId)
+            .HasForeignKey(p => p.ProvinceId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<BusinessPage>()
-            .HasOne(b => b.City)
+            .HasOne(p => p.City)
             .WithMany()
-            .HasForeignKey(b => b.CityId)
+            .HasForeignKey(p => p.CityId)
             .OnDelete(DeleteBehavior.SetNull);
 
         // Many-to-Many: Страницы <-> Теги
@@ -99,9 +98,6 @@ public class DirectoryDbContext : DbContext
                 schedule.ToJson();
                 schedule.OwnsMany(s => s.Intervals);
             });
-
-            // Пространственные данные
-            entity.Property(b => b.Location).HasColumnType("geography(Point, 4326)");
         });
     }
 }
