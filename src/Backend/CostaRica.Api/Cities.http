@@ -1,0 +1,30 @@
+﻿@base_url = http://localhost:5046
+
+# @name createProvince
+POST {{base_url}}/api/provinces
+Content-Type: application/json
+
+{
+  "name": "Guanacaste",
+  "slug": "guanacaste"
+}
+
+###
+
+# @name createCity
+POST {{base_url}}/api/cities
+Content-Type: application/json
+
+{
+  "name": "Liberia",
+  "slug": "liberia",
+  "provinceId": "{{createProvince.response.body.$.id}}"
+}
+
+###
+
+GET {{base_url}}/api/cities
+
+###
+
+GET {{base_url}}/api/cities/province/guanacaste
