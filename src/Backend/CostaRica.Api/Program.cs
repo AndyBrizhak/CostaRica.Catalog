@@ -2,6 +2,7 @@ using CostaRica.Api.Data;
 using CostaRica.Api.Endpoints;
 using CostaRica.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,11 @@ builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextO
 {
     // Используем NetTopologySuite для работы с PostGIS (необходим для BusinessPage.Location)
     options.UseNpgsql(o => o.UseNetTopologySuite());
+
+    // --- ВРЕМЕННЫЙ БЛОК ДЛЯ СОЗДАНИЯ МИГРАЦИИ ---
+    // Игнорируем проверку на наличие изменений в модели, чтобы приложение не падало при старте
+    options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
+    // --------------------------------------------
 });
 
 // 3. РЕГИСТРАЦИЯ СЕРВИСОВ (Dependency Injection)
