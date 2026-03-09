@@ -26,11 +26,30 @@ public static class TagEndpoints
         tagGroups.MapPost("/", async (TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
         {
             var result = await service.CreateAsync(dto, ct);
+
+            if (result is null)
+            {
+                return Results.Conflict(new { error = $"Tag group with slug '{dto.Slug}' already exists." });
+            }
+
             return Results.Created($"/api/tag-groups/{result.Id}", result);
         });
 
         tagGroups.MapPut("/{id:guid}", async (Guid id, TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
-            await service.UpdateAsync(id, dto, ct) is { } result ? Results.Ok(result) : Results.NotFound());
+        {
+            var result = await service.UpdateAsync(id, dto, ct);
+
+            if (result is null)
+            {
+                // Проверяем, существует ли группа вообще, чтобы понять: это 404 или 409
+                var exists = await service.GetByIdAsync(id, ct);
+                return exists is null
+                    ? Results.NotFound()
+                    : Results.Conflict(new { error = $"Slug '{dto.Slug}' is already taken by another group." });
+            }
+
+            return Results.Ok(result);
+        });
 
         tagGroups.MapDelete("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
             await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound());
@@ -48,28 +67,29 @@ public static class TagEndpoints
 
         tags.MapPost("/", async (TagUpsertDto dto, ITagService service, CancellationToken ct) =>
         {
-            try
+            var result = await service.CreateAsync(dto, ct);
+
+            if (result is null)
             {
-                var result = await service.CreateAsync(dto, ct);
-                return Results.Created($"/api/tags/{result.Id}", result);
+                return Results.Conflict(new { error = $"Tag with slug '{dto.Slug}' already exists or group does not exist." });
             }
-            catch (InvalidOperationException ex)
-            {
-                return Results.BadRequest(ex.Message);
-            }
+
+            return Results.Created($"/api/tags/{result.Id}", result);
         });
 
         tags.MapPut("/{id:guid}", async (Guid id, TagUpsertDto dto, ITagService service, CancellationToken ct) =>
         {
-            try
+            var result = await service.UpdateAsync(id, dto, ct);
+
+            if (result is null)
             {
-                var result = await service.UpdateAsync(id, dto, ct);
-                return result is not null ? Results.Ok(result) : Results.NotFound();
+                var exists = await service.GetByIdAsync(id, ct);
+                return exists is null
+                    ? Results.NotFound()
+                    : Results.Conflict(new { error = $"Update failed. Possible slug conflict or group not found." });
             }
-            catch (InvalidOperationException ex)
-            {
-                return Results.BadRequest(ex.Message);
-            }
+
+            return Results.Ok(result);
         });
 
         tags.MapDelete("/{id:guid}", async (Guid id, ITagService service, CancellationToken ct) =>

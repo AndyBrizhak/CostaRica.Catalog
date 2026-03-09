@@ -10,11 +10,7 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
     {
         return await db.TagGroups
             .AsNoTracking()
-            .Select(tg => new TagGroupResponseDto(
-                tg.Id,
-                tg.NameEn,
-                tg.NameEs,
-                tg.Slug))
+            .Select(tg => MapToDto(tg))
             .ToListAsync(ct);
     }
 
@@ -31,19 +27,27 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
     {
         var tg = await db.TagGroups
             .AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Slug == slug, ct);
+            .FirstOrDefaultAsync(x => x.Slug == slug.ToLowerInvariant(), ct);
 
         return tg == null ? null : MapToDto(tg);
     }
 
-    public async Task<TagGroupResponseDto> CreateAsync(TagGroupUpsertDto dto, CancellationToken ct = default)
+    public async Task<TagGroupResponseDto?> CreateAsync(TagGroupUpsertDto dto, CancellationToken ct = default)
     {
+        var slugLower = dto.Slug.ToLowerInvariant();
+
+        // Проверка уникальности слага: если уже существует, возвращаем null
+        if (await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
+        {
+            return null;
+        }
+
         var tagGroup = new TagGroup
         {
             Id = Guid.NewGuid(),
             NameEn = dto.NameEn,
             NameEs = dto.NameEs,
-            Slug = dto.Slug.ToLowerInvariant()
+            Slug = slugLower
         };
 
         db.TagGroups.Add(tagGroup);
@@ -57,9 +61,17 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
         var tagGroup = await db.TagGroups.FindAsync([id], ct);
         if (tagGroup == null) return null;
 
+        var slugLower = dto.Slug.ToLowerInvariant();
+
+        // Если слаг меняется, проверяем, не занят ли новый слаг другой группой
+        if (tagGroup.Slug != slugLower && await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
+        {
+            return null;
+        }
+
         tagGroup.NameEn = dto.NameEn;
         tagGroup.NameEs = dto.NameEs;
-        tagGroup.Slug = dto.Slug.ToLowerInvariant();
+        tagGroup.Slug = slugLower;
 
         await db.SaveChangesAsync(ct);
         return MapToDto(tagGroup);
