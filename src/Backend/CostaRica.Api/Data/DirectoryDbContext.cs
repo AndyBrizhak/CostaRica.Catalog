@@ -31,21 +31,21 @@ public class DirectoryDbContext : DbContext
 
         // 2. Настройка связей
 
-        // Город -> Провинция (Restrict: нельзя удалить провинцию, если в ней есть города)
+        // Город -> Провинция
         modelBuilder.Entity<City>()
             .HasOne(c => c.Province)
             .WithMany(p => p.Cities)
             .HasForeignKey(c => c.ProvinceId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Теги -> Группа (Restrict: нельзя удалить группу, если в ней есть теги)
+        // Теги -> Группа (Безопасное удаление и навигация)
         modelBuilder.Entity<Tag>()
             .HasOne(t => t.TagGroup)
             .WithMany(tg => tg.Tags)
             .HasForeignKey(t => t.TagGroupId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Бизнес-страница -> Провинция и Город
+        // Бизнес-страница -> География
         modelBuilder.Entity<BusinessPage>()
             .HasOne(p => p.Province)
             .WithMany()
@@ -58,19 +58,17 @@ public class DirectoryDbContext : DbContext
             .HasForeignKey(p => p.CityId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Many-to-Many: Страницы <-> Теги
+        // Many-to-Many связи
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.Tags)
             .WithMany()
             .UsingEntity(j => j.ToTable("BusinessTags"));
 
-        // Many-to-Many: Страницы <-> Медиа
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.Media)
             .WithMany(m => m.BusinessPages)
             .UsingEntity(j => j.ToTable("BusinessMedia"));
 
-        // Many-to-Many: Страницы <-> Категории Google
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.GoogleCategories)
             .WithMany()
@@ -79,9 +77,13 @@ public class DirectoryDbContext : DbContext
         // 3. Инфраструктура PostGIS
         modelBuilder.HasPostgresExtension("postgis");
 
-        // 4. JSONB конфигурация для BusinessPage
+        // 4. Конфигурация BusinessPage (JSONB и Geo)
         modelBuilder.Entity<BusinessPage>(entity =>
         {
+            // Явное указание типа для геолокации, чтобы избежать конфликтов при миграциях
+            entity.Property(b => b.Location)
+                .HasColumnType("geography(Point, 4326)");
+
             // SEO настройки
             entity.OwnsOne(b => b.Seo, seo =>
             {
