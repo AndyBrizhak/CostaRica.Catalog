@@ -36,26 +36,28 @@ public class TagService(DirectoryDbContext db) : ITagService
     {
         var tag = await db.Tags
             .AsNoTracking()
-            .FirstOrDefaultAsync(t => t.Slug == slug, ct);
+            .FirstOrDefaultAsync(t => t.Slug == slug.ToLowerInvariant(), ct);
 
         return tag == null ? null : MapToDto(tag);
     }
 
-    public async Task<TagResponseDto> CreateAsync(TagUpsertDto dto, CancellationToken ct = default)
+    public async Task<TagResponseDto?> CreateAsync(TagUpsertDto dto, CancellationToken ct = default)
     {
-        // Проверяем существование группы перед созданием тега
+        var slugLower = dto.Slug.ToLowerInvariant();
+
+        // 1. Проверяем существование группы
         var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
-        if (!groupExists)
-        {
-            throw new InvalidOperationException($"TagGroup with ID {dto.TagGroupId} not found.");
-        }
+        if (!groupExists) return null;
+
+        // 2. Проверяем уникальность слага
+        if (await db.Tags.AnyAsync(t => t.Slug == slugLower, ct)) return null;
 
         var tag = new Tag
         {
             Id = Guid.NewGuid(),
             NameEn = dto.NameEn,
             NameEs = dto.NameEs,
-            Slug = dto.Slug.ToLowerInvariant(),
+            Slug = slugLower,
             TagGroupId = dto.TagGroupId
         };
 
@@ -70,16 +72,24 @@ public class TagService(DirectoryDbContext db) : ITagService
         var tag = await db.Tags.FindAsync([id], ct);
         if (tag == null) return null;
 
-        // Если группа меняется, проверяем её существование
+        var slugLower = dto.Slug.ToLowerInvariant();
+
+        // 1. Если группа меняется, проверяем её наличие
         if (tag.TagGroupId != dto.TagGroupId)
         {
             var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
-            if (!groupExists) throw new InvalidOperationException("New TagGroup not found.");
+            if (!groupExists) return null;
+        }
+
+        // 2. Если слаг меняется, проверяем уникальность
+        if (tag.Slug != slugLower && await db.Tags.AnyAsync(t => t.Slug == slugLower, ct))
+        {
+            return null;
         }
 
         tag.NameEn = dto.NameEn;
         tag.NameEs = dto.NameEs;
-        tag.Slug = dto.Slug.ToLowerInvariant();
+        tag.Slug = slugLower;
         tag.TagGroupId = dto.TagGroupId;
 
         await db.SaveChangesAsync(ct);

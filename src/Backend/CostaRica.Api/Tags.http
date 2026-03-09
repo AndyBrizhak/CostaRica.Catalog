@@ -1,5 +1,6 @@
 ﻿@api_HostAddress = http://localhost:5046
 
+# 1. Создание группы тегов
 # @name createGroup
 POST {{api_HostAddress}}/api/tag-groups
 Content-Type: application/json
@@ -12,14 +13,15 @@ Content-Type: application/json
 
 ###
 
-GET {{api_HostAddress}}/api/tag-groups
+# 2. Получение группы по слагу (чтобы достать ID, если POST выше вернул 409)
+# @name getGroup
+GET {{api_HostAddress}}/api/tag-groups/slug/amenities
 
 ###
 
-GET {{api_HostAddress}}/api/tag-groups/{{createGroup.response.body.$.id}}
+@groupId = {{getGroup.response.body.$.id}}
 
-###
-
+# 3. Создание тега (WiFi)
 # @name createTag
 POST {{api_HostAddress}}/api/tags
 Content-Type: application/json
@@ -28,28 +30,53 @@ Content-Type: application/json
   "nameEn": "Free WiFi",
   "nameEs": "WiFi gratis",
   "slug": "free-wifi",
-  "tagGroupId": "{{createGroup.response.body.$.id}}"
+  "tagGroupId": "{{groupId}}"
 }
 
 ###
 
+# 4. Попытка создания дубликата тега (ожидается 409 Conflict)
+POST {{api_HostAddress}}/api/tags
+Content-Type: application/json
+
+{
+  "nameEn": "Free WiFi Duplicate",
+  "nameEs": "WiFi duplicado",
+  "slug": "free-wifi",
+  "tagGroupId": "{{groupId}}"
+}
+
+###
+
+# 5. Получение всех тегов
 GET {{api_HostAddress}}/api/tags
 
 ###
 
-GET {{api_HostAddress}}/api/tags/group/{{createGroup.response.body.$.id}}
+# 6. Получение тегов конкретной группы
+GET {{api_HostAddress}}/api/tags/group/{{groupId}}
 
 ###
 
-PUT {{api_HostAddress}}/api/tag-groups/{{createGroup.response.body.$.id}}
+@tagId = {{createTag.response.body.$.id}}
+
+# 7. Обновление тега
+PUT {{api_HostAddress}}/api/tags/{{tagId}}
 Content-Type: application/json
 
 {
-  "nameEn": "General Amenities",
-  "nameEs": "Comodidades Generales",
-  "slug": "general-amenities"
+  "nameEn": "High Speed WiFi",
+  "nameEs": "WiFi de alta velocidad",
+  "slug": "high-speed-wifi",
+  "tagGroupId": "{{groupId}}"
 }
 
 ###
 
-DELETE {{api_HostAddress}}/api/tags/{{createTag.response.body.$.id}}
+# 8. Удаление тега
+DELETE {{api_HostAddress}}/api/tags/{{tagId}}
+
+###
+
+# 9. Удаление группы тегов
+DELETE {{api_HostAddress}}/api/tag-groups/{{groupId}}
