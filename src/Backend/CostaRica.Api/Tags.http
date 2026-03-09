@@ -1,0 +1,55 @@
+﻿@api_HostAddress = http://localhost:5046
+
+# @name createGroup
+POST {{api_HostAddress}}/api/tag-groups
+Content-Type: application/json
+
+{
+  "nameEn": "Amenities",
+  "nameEs": "Comodidades",
+  "slug": "amenities"
+}
+
+###
+
+GET {{api_HostAddress}}/api/tag-groups
+
+###
+
+GET {{api_HostAddress}}/api/tag-groups/{{createGroup.response.body.$.id}}
+
+###
+
+# @name createTag
+POST {{api_HostAddress}}/api/tags
+Content-Type: application/json
+
+{
+  "nameEn": "Free WiFi",
+  "nameEs": "WiFi gratis",
+  "slug": "free-wifi",
+  "tagGroupId": "{{createGroup.response.body.$.id}}"
+}
+
+###
+
+GET {{api_HostAddress}}/api/tags
+
+###
+
+GET {{api_HostAddress}}/api/tags/group/{{createGroup.response.body.$.id}}
+
+###
+
+PUT {{api_HostAddress}}/api/tag-groups/{{createGroup.response.body.$.id}}
+Content-Type: application/json
+
+{
+  "nameEn": "General Amenities",
+  "nameEs": "Comodidades Generales",
+  "slug": "general-amenities"
+}
+
+###
+
+DELETE {{api_HostAddress}}/api/tags/{{createTag.response.body.$.id}}
