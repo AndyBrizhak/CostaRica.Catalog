@@ -67,6 +67,11 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
+
+    // Перенаправляем с корня (/) на интерфейс Scalar (/scalar/v1)
+    app.MapGet("/", () => Results.Redirect("/scalar/v1"));
 }
+
+
 
 app.Run();
