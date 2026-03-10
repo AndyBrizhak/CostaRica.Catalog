@@ -3,21 +3,18 @@ using System;
 using CostaRica.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace CostaRica.Api.Data.Migrations
+namespace CostaRica.Api.Migrations
 {
     [DbContext(typeof(DirectoryDbContext))]
-    [Migration("20260303132304_InitialCreate")]
-    partial class InitialCreate
+    partial class DirectoryDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -130,9 +127,6 @@ namespace CostaRica.Api.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<Point>("Center")
-                        .HasColumnType("geography(Point, 4326)");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -337,12 +331,13 @@ namespace CostaRica.Api.Data.Migrations
                 {
                     b.HasOne("CostaRica.Api.Data.City", "City")
                         .WithMany()
-                        .HasForeignKey("CityId");
+                        .HasForeignKey("CityId")
+                        .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("CostaRica.Api.Data.Province", "Province")
                         .WithMany()
                         .HasForeignKey("ProvinceId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.OwnsOne("CostaRica.Api.Data.BusinessContacts", "Contacts", b1 =>
@@ -501,9 +496,9 @@ namespace CostaRica.Api.Data.Migrations
             modelBuilder.Entity("CostaRica.Api.Data.City", b =>
                 {
                     b.HasOne("CostaRica.Api.Data.Province", "Province")
-                        .WithMany()
+                        .WithMany("Cities")
                         .HasForeignKey("ProvinceId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Province");
@@ -512,12 +507,22 @@ namespace CostaRica.Api.Data.Migrations
             modelBuilder.Entity("CostaRica.Api.Data.Tag", b =>
                 {
                     b.HasOne("CostaRica.Api.Data.TagGroup", "TagGroup")
-                        .WithMany()
+                        .WithMany("Tags")
                         .HasForeignKey("TagGroupId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("TagGroup");
+                });
+
+            modelBuilder.Entity("CostaRica.Api.Data.Province", b =>
+                {
+                    b.Navigation("Cities");
+                });
+
+            modelBuilder.Entity("CostaRica.Api.Data.TagGroup", b =>
+                {
+                    b.Navigation("Tags");
                 });
 #pragma warning restore 612, 618
         }

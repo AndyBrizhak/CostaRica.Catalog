@@ -1,0 +1,82 @@
+﻿@api_HostAddress = http://localhost:5046
+
+# 1. Создание группы тегов
+# @name createGroup
+POST {{api_HostAddress}}/api/tag-groups
+Content-Type: application/json
+
+{
+  "nameEn": "Amenities",
+  "nameEs": "Comodidades",
+  "slug": "amenities"
+}
+
+###
+
+# 2. Получение группы по слагу (чтобы достать ID, если POST выше вернул 409)
+# @name getGroup
+GET {{api_HostAddress}}/api/tag-groups/slug/amenities
+
+###
+
+@groupId = {{getGroup.response.body.$.id}}
+
+# 3. Создание тега (WiFi)
+# @name createTag
+POST {{api_HostAddress}}/api/tags
+Content-Type: application/json
+
+{
+  "nameEn": "Free WiFi",
+  "nameEs": "WiFi gratis",
+  "slug": "free-wifi",
+  "tagGroupId": "{{groupId}}"
+}
+
+###
+
+# 4. Попытка создания дубликата тега (ожидается 409 Conflict)
+POST {{api_HostAddress}}/api/tags
+Content-Type: application/json
+
+{
+  "nameEn": "Free WiFi Duplicate",
+  "nameEs": "WiFi duplicado",
+  "slug": "free-wifi",
+  "tagGroupId": "{{groupId}}"
+}
+
+###
+
+# 5. Получение всех тегов
+GET {{api_HostAddress}}/api/tags
+
+###
+
+# 6. Получение тегов конкретной группы
+GET {{api_HostAddress}}/api/tags/group/{{groupId}}
+
+###
+
+@tagId = {{createTag.response.body.$.id}}
+
+# 7. Обновление тега
+PUT {{api_HostAddress}}/api/tags/{{tagId}}
+Content-Type: application/json
+
+{
+  "nameEn": "High Speed WiFi",
+  "nameEs": "WiFi de alta velocidad",
+  "slug": "high-speed-wifi",
+  "tagGroupId": "{{groupId}}"
+}
+
+###
+
+# 8. Удаление тега
+DELETE {{api_HostAddress}}/api/tags/{{tagId}}
+
+###
+
+# 9. Удаление группы тегов
+DELETE {{api_HostAddress}}/api/tag-groups/{{groupId}}

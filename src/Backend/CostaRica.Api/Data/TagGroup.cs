@@ -12,4 +12,7 @@ public class TagGroup
 
     // Уникальный слаг для URL или иконок: "food-and-drink"
     public string Slug { get; set; } = string.Empty;
+
+    // Список тегов, принадлежащих этой группе
+    public ICollection<Tag> Tags { get; set; } = new List<Tag>();
 }

@@ -31,47 +31,44 @@ public class DirectoryDbContext : DbContext
 
         // 2. Настройка связей
 
-        // Город -> Провинция (Many-to-One)
+        // Город -> Провинция
         modelBuilder.Entity<City>()
             .HasOne(c => c.Province)
             .WithMany(p => p.Cities)
             .HasForeignKey(c => c.ProvinceId)
-            // ЗАПРЕТ каскадного удаления: нельзя удалить провинцию, если в ней есть города
             .OnDelete(DeleteBehavior.Restrict);
 
-        // Тег -> Группа (Many-to-One)
+        // Теги -> Группа (Безопасное удаление и навигация)
         modelBuilder.Entity<Tag>()
             .HasOne(t => t.TagGroup)
-            .WithMany() // В TagGroup нет коллекции Tags
+            .WithMany(tg => tg.Tags)
             .HasForeignKey(t => t.TagGroupId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Restrict);
 
-        // Бизнес-страница -> Провинция и Город
+        // Бизнес-страница -> География
         modelBuilder.Entity<BusinessPage>()
-            .HasOne(b => b.Province)
+            .HasOne(p => p.Province)
             .WithMany()
-            .HasForeignKey(b => b.ProvinceId)
+            .HasForeignKey(p => p.ProvinceId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<BusinessPage>()
-            .HasOne(b => b.City)
+            .HasOne(p => p.City)
             .WithMany()
-            .HasForeignKey(b => b.CityId)
+            .HasForeignKey(p => p.CityId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Many-to-Many: Страницы <-> Теги
+        // Many-to-Many связи
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.Tags)
             .WithMany()
             .UsingEntity(j => j.ToTable("BusinessTags"));
 
-        // Many-to-Many: Страницы <-> Медиа
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.Media)
             .WithMany(m => m.BusinessPages)
             .UsingEntity(j => j.ToTable("BusinessMedia"));
 
-        // Many-to-Many: Страницы <-> Категории Google
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.GoogleCategories)
             .WithMany()
@@ -80,9 +77,13 @@ public class DirectoryDbContext : DbContext
         // 3. Инфраструктура PostGIS
         modelBuilder.HasPostgresExtension("postgis");
 
-        // 4. JSONB конфигурация для BusinessPage
+        // 4. Конфигурация BusinessPage (JSONB и Geo)
         modelBuilder.Entity<BusinessPage>(entity =>
         {
+            // Явное указание типа для геолокации, чтобы избежать конфликтов при миграциях
+            entity.Property(b => b.Location)
+                .HasColumnType("geography(Point, 4326)");
+
             // SEO настройки
             entity.OwnsOne(b => b.Seo, seo =>
             {
@@ -99,9 +100,6 @@ public class DirectoryDbContext : DbContext
                 schedule.ToJson();
                 schedule.OwnsMany(s => s.Intervals);
             });
-
-            // Пространственные данные
-            entity.Property(b => b.Location).HasColumnType("geography(Point, 4326)");
         });
     }
 }

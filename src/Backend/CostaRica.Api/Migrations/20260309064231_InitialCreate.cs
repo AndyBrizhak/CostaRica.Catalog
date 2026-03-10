@@ -4,7 +4,7 @@ using NetTopologySuite.Geometries;
 
 #nullable disable
 
-namespace CostaRica.Api.Data.Migrations
+namespace CostaRica.Api.Migrations
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration
@@ -79,8 +79,7 @@ namespace CostaRica.Api.Data.Migrations
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
                     Name = table.Column<string>(type: "text", nullable: false),
                     Slug = table.Column<string>(type: "text", nullable: false),
-                    ProvinceId = table.Column<Guid>(type: "uuid", nullable: false),
-                    Center = table.Column<Point>(type: "geography(Point, 4326)", nullable: true)
+                    ProvinceId = table.Column<Guid>(type: "uuid", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -90,7 +89,7 @@ namespace CostaRica.Api.Data.Migrations
                         column: x => x.ProvinceId,
                         principalTable: "Provinces",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -111,7 +110,7 @@ namespace CostaRica.Api.Data.Migrations
                         column: x => x.TagGroupId,
                         principalTable: "TagGroups",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -140,13 +139,14 @@ namespace CostaRica.Api.Data.Migrations
                         name: "FK_BusinessPages_Cities_CityId",
                         column: x => x.CityId,
                         principalTable: "Cities",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "FK_BusinessPages_Provinces_ProvinceId",
                         column: x => x.ProvinceId,
                         principalTable: "Provinces",
                         principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
