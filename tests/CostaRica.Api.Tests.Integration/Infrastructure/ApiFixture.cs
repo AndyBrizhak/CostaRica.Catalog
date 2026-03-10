@@ -12,15 +12,22 @@ public class ApiFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        // Создаем билдер и СРАЗУ говорим ему пропустить тома
+        // 1. Создаем билдер для тестового окружения
         var appHost = await DistributedApplicationTestingBuilder.CreateAsync<Projects.CostaRica_Catalog_AppHost>();
+
+        // 2. Отключаем тома для изоляции тестов (база будет создаваться с нуля в контейнере)
         appHost.Configuration["SkipVolumes"] = "true";
 
         _app = await appHost.BuildAsync();
 
-        // Запускаем всё. Теперь Aspire точно знает, что делать.
+        // 3. Запускаем оркестратор Aspire
         await _app.StartAsync();
 
+        // 4. ЖДЕМ ГОТОВНОСТИ: Тесты не пойдут дальше, пока API не станет "Healthy"
+        // Это предотвращает зависания и конфликты при повторных запусках
+        await _app.ResourceNotifications.WaitForResourceHealthyAsync("api");
+
+        // 5. Создаем клиент только после того, как приложение полностью готово
         _httpClient = _app.CreateHttpClient("api");
     }
 
@@ -28,6 +35,7 @@ public class ApiFixture : IAsyncLifetime
     {
         if (_app is not null)
         {
+            // Корректная остановка всех контейнеров Aspire
             await _app.StopAsync();
             await _app.DisposeAsync();
         }
