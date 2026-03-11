@@ -3,6 +3,7 @@ using CostaRica.Api.Endpoints;
 using CostaRica.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using SixLabors.ImageSharp.Web.Caching;
 using SixLabors.ImageSharp.Web.DependencyInjection;
 using SixLabors.ImageSharp.Web.Providers;
 
@@ -21,32 +22,37 @@ builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 
-// --- НОВОЕ: Регистрация системы медиа-ассетов ---
+// --- СИСТЕМА МЕДИА-АССЕТОВ ---
 
 // 1. Регистрируем наше абстрактное хранилище
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
 
-// 2. Настраиваем ImageSharp для динамической обработки изображений
+// Получаем базовый путь из конфигурации (проброшен из AppHost)
+var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
+
+// 2. Настраиваем ImageSharp: указываем пути для оригиналов и для кэша
 builder.Services.AddImageSharp()
     .Configure<PhysicalFileSystemProviderOptions>(options =>
     {
-        // Указываем ImageSharp тот же путь, который мы пробросили из AppHost
-        // Это позволит библиотеке находить файлы для ресайза и конвертации
-        options.ProviderRootPath = builder.Configuration["Storage:LocalPath"] ?? "media";
+        options.ProviderRootPath = storagePath;
+    })
+    .Configure<PhysicalFileSystemCacheOptions>(options =>
+    {
+        // Явный путь к кэшу исправляет ошибку запуска в Aspire
+        options.CacheRootPath = Path.Combine(storagePath, "is-cache");
     });
 
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// --- НОВОЕ: Middleware для обработки изображений ---
-// Важно: UseImageSharp должен идти ДО эндпоинтов и обработки статических файлов
+// Middleware для обработки изображений (должен быть до эндпоинтов)
 app.UseImageSharp();
 
-// Сначала мапим служебные эндпоинты Aspire
+// Служебные эндпоинты Aspire
 app.MapDefaultEndpoints();
 
-// Запуск миграций
+// Запуск миграций при старте
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
@@ -77,17 +83,18 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Мапинг существующих эндпоинтов
+// Мапинг эндпоинтов сущностей
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
-
-// Примечание: app.MapMediaEndpoints() добавим в следующем шаге после создания файла.
 
 if (app.Environment.IsDevelopment())
 {
     app.MapScalarApiReference();
     app.MapOpenApi();
+
+    // ПЕРЕНАПРАВЛЕНИЕ: Чтобы при клике в дашборде Aspire открывался Scalar, а не 404
+    app.MapGet("/", () => Results.Redirect("/scalar/v1"));
 }
 
 app.Run();
