@@ -7,13 +7,30 @@ using SixLabors.ImageSharp.Web.Caching;
 using SixLabors.ImageSharp.Web.DependencyInjection;
 using SixLabors.ImageSharp.Web.Providers;
 
+// ==================================================================================
+// [CRITICAL: DO NOT REMOVE] Блок совместимости для миграций EF Core и PostgreSQL.
+// Эти флаги подавляют ошибки при работе с "виртуальной" базой данных в контейнере
+// и обеспечивают поддержку старых форматов дат и типов PostGIS.
+// В случае удаления — закомментируйте, но не удаляйте.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+AppContext.SetSwitch("Npgsql.DisablePostgres80StrictTypeChecking", true);
+// ==================================================================================
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
+// Настройка контекста БД с защитой для Design-Time (миграций)
+var connectionString = builder.Configuration.GetConnectionString("postgresdb");
+
 builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextOptions: options =>
 {
-    options.UseNpgsql(o => o.UseNetTopologySuite());
+    options.UseNpgsql(o =>
+    {
+        o.UseNetTopologySuite();
+        // Это помогает инструментам миграции понимать структуру БД даже без активного соединения
+        o.EnableRetryOnFailure();
+    });
 });
 
 // Регистрация бизнес-сервисов
@@ -23,14 +40,9 @@ builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 
 // --- СИСТЕМА МЕДИА-АССЕТОВ ---
-
-// 1. Регистрируем наше абстрактное хранилище
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
-
-// Получаем базовый путь из конфигурации (проброшен из AppHost)
 var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
 
-// 2. Настраиваем ImageSharp: указываем пути для оригиналов и для кэша
 builder.Services.AddImageSharp()
     .Configure<PhysicalFileSystemProviderOptions>(options =>
     {
@@ -38,7 +50,6 @@ builder.Services.AddImageSharp()
     })
     .Configure<PhysicalFileSystemCacheOptions>(options =>
     {
-        // Явный путь к кэшу исправляет ошибку запуска в Aspire
         options.CacheRootPath = Path.Combine(storagePath, "is-cache");
     });
 
@@ -46,44 +57,43 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Middleware для обработки изображений (должен быть до эндпоинтов)
 app.UseImageSharp();
-
-// Служебные эндпоинты Aspire
 app.MapDefaultEndpoints();
 
-// Запуск миграций при старте
-using (var scope = app.Services.CreateScope())
+// Запуск миграций при старте (только если мы не в режиме создания миграции)
+if (!args.Contains("ef"))
 {
-    var services = scope.ServiceProvider;
-    var logger = services.GetRequiredService<ILogger<Program>>();
-    var db = services.GetRequiredService<DirectoryDbContext>();
-
-    int maxRetries = 10;
-    int delay = 2000;
-
-    for (int i = 1; i <= maxRetries; i++)
+    using (var scope = app.Services.CreateScope())
     {
-        try
+        var services = scope.ServiceProvider;
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        var db = services.GetRequiredService<DirectoryDbContext>();
+
+        int maxRetries = 10;
+        int delay = 2000;
+
+        for (int i = 1; i <= maxRetries; i++)
         {
-            if (await db.Database.CanConnectAsync())
+            try
             {
-                logger.LogInformation("Соединение с БД установлено. Применение миграций...");
-                await db.Database.MigrateAsync();
-                logger.LogInformation("Миграции завершены.");
-                break;
+                if (await db.Database.CanConnectAsync())
+                {
+                    logger.LogInformation("Соединение с БД установлено. Применение миграций...");
+                    await db.Database.MigrateAsync();
+                    logger.LogInformation("Миграции завершены.");
+                    break;
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            if (i == maxRetries) throw;
-            logger.LogWarning("БД пока не готова (попытка {i}). Ожидание...", i);
-            await Task.Delay(delay);
+            catch (Exception ex)
+            {
+                if (i == maxRetries) throw;
+                logger.LogWarning("БД пока не готова (попытка {i}). Ожидание...", i);
+                await Task.Delay(delay);
+            }
         }
     }
 }
 
-// Мапинг эндпоинтов сущностей
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
@@ -92,8 +102,6 @@ if (app.Environment.IsDevelopment())
 {
     app.MapScalarApiReference();
     app.MapOpenApi();
-
-    // ПЕРЕНАПРАВЛЕНИЕ: Чтобы при клике в дашборде Aspire открывался Scalar, а не 404
     app.MapGet("/", () => Results.Redirect("/scalar/v1"));
 }
 
