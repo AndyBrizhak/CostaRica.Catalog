@@ -9,9 +9,6 @@ using SixLabors.ImageSharp.Web.Providers;
 
 // ==================================================================================
 // [CRITICAL: DO NOT REMOVE] Блок совместимости для миграций EF Core и PostgreSQL.
-// Эти флаги подавляют ошибки при работе с "виртуальной" базой данных в контейнере
-// и обеспечивают поддержку старых форматов дат и типов PostGIS.
-// В случае удаления — закомментируйте, но не удаляйте.
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 AppContext.SetSwitch("Npgsql.DisablePostgres80StrictTypeChecking", true);
 // ==================================================================================
@@ -20,15 +17,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-// Настройка контекста БД с защитой для Design-Time (миграций)
-var connectionString = builder.Configuration.GetConnectionString("postgresdb");
-
 builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextOptions: options =>
 {
     options.UseNpgsql(o =>
     {
         o.UseNetTopologySuite();
-        // Это помогает инструментам миграции понимать структуру БД даже без активного соединения
         o.EnableRetryOnFailure();
     });
 });
@@ -39,8 +32,11 @@ builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 
-// --- СИСТЕМА МЕДИА-АССЕТОВ ---
+// --- НОВОЕ: Регистрация системы медиа-ассетов ---
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
+// Регистрируем основной сервис управления ассетами
+builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
+
 var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
 
 builder.Services.AddImageSharp()
@@ -60,7 +56,7 @@ var app = builder.Build();
 app.UseImageSharp();
 app.MapDefaultEndpoints();
 
-// Запуск миграций при старте (только если мы не в режиме создания миграции)
+// Запуск миграций при старте
 if (!args.Contains("ef"))
 {
     using (var scope = app.Services.CreateScope())
@@ -94,9 +90,12 @@ if (!args.Contains("ef"))
     }
 }
 
+// Мапинг эндпоинтов
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
+// Добавляем мапинг медиа-эндпоинтов (файл создадим следующим шагом)
+app.MapMediaEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
