@@ -10,40 +10,40 @@ public static class MediaEndpoints
     {
         var group = routes.MapGroup("/media").WithTags("Media");
 
-        // SEO-эндпоинт для выдачи изображений
+        // 1. SEO-эндпоинт для выдачи изображений с поддержкой 301 редиректа
         group.MapGet("/{id:guid}/{slug}", async Task<IResult> (
             Guid id,
             string slug,
-            HttpContext context, // Убрали [FromQuery], HttpContext берется из контейнера напрямую
-            IMediaAssetService service) =>
+            HttpContext context,
+            [FromServices] IMediaAssetService service) =>
         {
             var asset = await service.GetByIdAsync(id);
 
             if (asset == null) return Results.NotFound();
 
+            // Если слаг не совпадает, делаем постоянный редирект на актуальный адрес
             if (asset.Slug != slug)
             {
                 var newUrl = $"/media/{id}/{asset.Slug}{context.Request.QueryString}";
-                // Исправлено: используем стандартный Redirect с флагом permanent
                 return Results.Redirect(newUrl, permanent: true);
             }
 
-            // Перенаправляем на физический файл, который обработает ImageSharp
+            // Отдаем файл. ImageSharp.Web перехватит этот результат и применит трансформации
             return Results.File(Path.Combine("/", asset.FileName), asset.ContentType);
         })
         .WithName("GetMediaFile");
 
-        // Получение списка с фильтрацией
-        group.MapGet("/", async (MediaFilterDto filter, IMediaAssetService service) =>
+        // 2. Получение списка с фильтрацией (Исправлено: добавлен [AsParameters])
+        group.MapGet("/", async ([AsParameters] MediaFilterDto filter, [FromServices] IMediaAssetService service) =>
         {
             return Results.Ok(await service.GetFilteredAsync(filter));
         })
         .WithName("GetMediaList");
 
-        // Загрузка нового файла
+        // 3. Загрузка нового файла (Multipart FormData)
         group.MapPost("/upload", async Task<IResult> (
             HttpRequest request,
-            IMediaAssetService service) =>
+            [FromServices] IMediaAssetService service) =>
         {
             if (!request.HasFormContentType) return Results.BadRequest("Ожидается multipart/form-data");
 
@@ -70,16 +70,16 @@ public static class MediaEndpoints
         .DisableAntiforgery()
         .WithName("UploadMedia");
 
-        // Обновление метаданных
-        group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, IMediaAssetService service) =>
+        // 4. Обновление метаданных ассета
+        group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, [FromServices] IMediaAssetService service) =>
         {
             var result = await service.UpdateMetadataAsync(id, dto);
             return result != null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("UpdateMediaMetadata");
 
-        // Удаление
-        group.MapDelete("/{id:guid}", async (Guid id, IMediaAssetService service) =>
+        // 5. Удаление ассета (с защитой от каскадного удаления)
+        group.MapDelete("/{id:guid}", async (Guid id, [FromServices] IMediaAssetService service) =>
         {
             var result = await service.DeleteAsync(id);
             return result.Success ? Results.NoContent() : Results.BadRequest(result.ErrorMessage);
