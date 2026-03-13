@@ -3,6 +3,15 @@ using CostaRica.Api.Endpoints;
 using CostaRica.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using SixLabors.ImageSharp.Web.Caching;
+using SixLabors.ImageSharp.Web.DependencyInjection;
+using SixLabors.ImageSharp.Web.Providers;
+
+// ==================================================================================
+// [CRITICAL: DO NOT REMOVE] Блок совместимости для миграций EF Core и PostgreSQL.
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+AppContext.SetSwitch("Npgsql.DisablePostgres80StrictTypeChecking", true);
+// ==================================================================================
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,63 +19,89 @@ builder.AddServiceDefaults();
 
 builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextOptions: options =>
 {
-    options.UseNpgsql(o => o.UseNetTopologySuite());
+    options.UseNpgsql(o =>
+    {
+        o.UseNetTopologySuite();
+        o.EnableRetryOnFailure();
+    });
 });
 
+// Регистрация бизнес-сервисов
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 
+// --- НОВОЕ: Регистрация системы медиа-ассетов ---
+builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
+// Регистрируем основной сервис управления ассетами
+builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
+
+var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
+
+builder.Services.AddImageSharp()
+    .Configure<PhysicalFileSystemProviderOptions>(options =>
+    {
+        options.ProviderRootPath = storagePath;
+    })
+    .Configure<PhysicalFileSystemCacheOptions>(options =>
+    {
+        options.CacheRootPath = Path.Combine(storagePath, "is-cache");
+    });
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// ПЕРЕНОСИМ СЮДА: Сначала мапим служебные эндпоинты (Health Checks), 
-// чтобы Aspire видел, что приложение живое
+app.UseImageSharp();
 app.MapDefaultEndpoints();
 
-// Теперь запускаем миграции
-using (var scope = app.Services.CreateScope())
+// Запуск миграций при старте
+if (!args.Contains("ef"))
 {
-    var services = scope.ServiceProvider;
-    var logger = services.GetRequiredService<ILogger<Program>>();
-    var db = services.GetRequiredService<DirectoryDbContext>();
-
-    // В тестах база обычно поднимается быстрее, в Docker Desktop с PostGIS — дольше.
-    // Используем CanConnectAsync, он легче и корректно работает через прокси Aspire.
-    int maxRetries = 10;
-    int delay = 2000;
-
-    for (int i = 1; i <= maxRetries; i++)
+    using (var scope = app.Services.CreateScope())
     {
-        try
+        var services = scope.ServiceProvider;
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        var db = services.GetRequiredService<DirectoryDbContext>();
+
+        int maxRetries = 10;
+        int delay = 2000;
+
+        for (int i = 1; i <= maxRetries; i++)
         {
-            if (await db.Database.CanConnectAsync())
+            try
             {
-                logger.LogInformation("Соединение с БД установлено. Применение миграций...");
-                await db.Database.MigrateAsync();
-                logger.LogInformation("Миграции завершены.");
-                break;
+                if (await db.Database.CanConnectAsync())
+                {
+                    logger.LogInformation("Соединение с БД установлено. Применение миграций...");
+                    await db.Database.MigrateAsync();
+                    logger.LogInformation("Миграции завершены.");
+                    break;
+                }
             }
-        }
-        catch (Exception ex)
-        {
-            if (i == maxRetries) throw;
-            logger.LogWarning("БД пока не готова (попытка {i}). Ожидание...", i);
-            await Task.Delay(delay);
+            catch (Exception ex)
+            {
+                if (i == maxRetries) throw;
+                logger.LogWarning("БД пока не готова (попытка {i}). Ожидание...", i);
+                await Task.Delay(delay);
+            }
         }
     }
 }
 
+// Мапинг эндпоинтов
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
+// Добавляем мапинг медиа-эндпоинтов (файл создадим следующим шагом)
+app.MapMediaEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
     app.MapScalarApiReference();
+    app.MapOpenApi();
+    app.MapGet("/", () => Results.Redirect("/scalar/v1"));
 }
 
 app.Run();
