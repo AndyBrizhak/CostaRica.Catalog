@@ -29,42 +29,49 @@ public class DirectoryDbContext : DbContext
         modelBuilder.Entity<MediaAsset>().HasIndex(m => m.Slug).IsUnique();
         modelBuilder.Entity<BusinessPage>().HasIndex(b => b.Slug).IsUnique();
 
-        // 2. Настройка связей
+        // 2. Настройка связей (ГЕОГРАФИЯ - Запрет каскадного удаления)
 
-        // Город -> Провинция
         modelBuilder.Entity<City>()
             .HasOne(c => c.Province)
             .WithMany(p => p.Cities)
-            .HasForeignKey(c => c.ProvinceId);
+            .HasForeignKey(c => c.ProvinceId)
+            .OnDelete(DeleteBehavior.Restrict);
 
-        // Страница бизнеса -> Провинция
         modelBuilder.Entity<BusinessPage>()
             .HasOne(b => b.Province)
             .WithMany()
-            .HasForeignKey(b => b.ProvinceId);
+            .HasForeignKey(b => b.ProvinceId)
+            .OnDelete(DeleteBehavior.Restrict);
 
-        // Страница бизнеса -> Город
         modelBuilder.Entity<BusinessPage>()
             .HasOne(b => b.City)
             .WithMany()
-            .HasForeignKey(b => b.CityId);
+            .HasForeignKey(b => b.CityId)
+            .OnDelete(DeleteBehavior.SetNull); // Если город удалят, бизнес останется в провинции
 
-        // --- ГИБРИДНАЯ МОДЕЛЬ КАТЕГОРИЙ GOOGLE ---
+        // 3. Теги (Запрет каскадного удаления групп)
+        modelBuilder.Entity<Tag>()
+            .HasOne(t => t.TagGroup)
+            .WithMany(tg => tg.Tags)
+            .HasForeignKey(t => t.TagGroupId)
+            .OnDelete(DeleteBehavior.Restrict);
 
-        // Настройка Primary Category (One-to-Many)
+        // 4. ГИБРИДНАЯ МОДЕЛЬ КАТЕГОРИЙ GOOGLE
+
+        // Primary Category (One-to-Many)
         modelBuilder.Entity<BusinessPage>()
             .HasOne(p => p.PrimaryCategory)
-            .WithMany() // Мы решили не добавлять обратную коллекцию в GoogleCategory
+            .WithMany()
             .HasForeignKey(p => p.PrimaryCategoryId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Настройка Secondary Categories (Many-to-Many)
+        // Secondary Categories (Many-to-Many)
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.SecondaryCategories)
             .WithMany()
             .UsingEntity(j => j.ToTable("BusinessSecondaryCategories"));
 
-        // Many-to-Many для тегов и медиа
+        // Другие Many-to-Many
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.Tags)
             .WithMany()
@@ -75,10 +82,10 @@ public class DirectoryDbContext : DbContext
             .WithMany(m => m.BusinessPages)
             .UsingEntity(j => j.ToTable("BusinessMedia"));
 
-        // 3. Инфраструктура PostGIS
+        // 5. Инфраструктура PostGIS
         modelBuilder.HasPostgresExtension("postgis");
 
-        // 4. Конфигурация BusinessPage (JSONB и Geo)
+        // 6. Конфигурация BusinessPage (JSONB и Geo)
         modelBuilder.Entity<BusinessPage>(entity =>
         {
             entity.Property(b => b.Location)
@@ -94,9 +101,10 @@ public class DirectoryDbContext : DbContext
             // Контакты (JSONB)
             entity.OwnsOne(b => b.Contacts, c => { c.ToJson(); });
 
-            // Расписание (JSONB)
+            // Расписание (JSONB) - Делаем опциональным
             entity.Property(b => b.Schedule)
-                .HasColumnType("jsonb");
+                .HasColumnType("jsonb")
+                .IsRequired(false);
         });
     }
 }
