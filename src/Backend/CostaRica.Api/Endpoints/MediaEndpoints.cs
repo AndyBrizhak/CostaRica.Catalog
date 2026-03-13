@@ -1,6 +1,7 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -15,59 +16,72 @@ public static class MediaEndpoints
             Guid id,
             string slug,
             HttpContext context,
-            [FromServices] IMediaAssetService service) =>
+            [FromServices] IMediaAssetService service,
+            [FromServices] IConfiguration config) =>
         {
             var asset = await service.GetByIdAsync(id);
 
             if (asset == null) return Results.NotFound();
 
-            // Если слаг не совпадает, делаем постоянный редирект на актуальный адрес
+            // Проверка актуальности слага для SEO. Если не совпадает — редирект на правильный URL.
             if (asset.Slug != slug)
             {
                 var newUrl = $"/media/{id}/{asset.Slug}{context.Request.QueryString}";
                 return Results.Redirect(newUrl, permanent: true);
             }
 
-            // Отдаем файл. ImageSharp.Web перехватит этот результат и применит трансформации
-            return Results.File(Path.Combine("/", asset.FileName), asset.ContentType);
+            // Получаем путь к хранилищу из конфигурации (по умолчанию "media")
+            var storagePath = config["Storage:LocalPath"] ?? "media";
+
+            // Формируем полный физический путь к файлу относительно рабочей директории
+            var filePath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), storagePath, asset.FileName));
+
+            if (!System.IO.File.Exists(filePath))
+            {
+                return Results.NotFound("Файл физически не найден в папке хранилища.");
+            }
+
+            // Возвращаем файл напрямую с корректным MIME-типом
+            return Results.File(filePath, asset.ContentType);
         })
         .WithName("GetMediaFile");
 
-        // 2. Получение списка с фильтрацией (Исправлено: добавлен [AsParameters])
+        // 2. Получение списка с фильтрацией (параметры передаются в строке запроса)
         group.MapGet("/", async ([AsParameters] MediaFilterDto filter, [FromServices] IMediaAssetService service) =>
         {
             return Results.Ok(await service.GetFilteredAsync(filter));
         })
         .WithName("GetMediaList");
 
-        // 3. Загрузка нового файла (Multipart FormData)
+        // 3. Загрузка нового файла (через форму для Scalar UI)
         group.MapPost("/upload", async Task<IResult> (
-            HttpRequest request,
+            [FromForm] IFormFile file,
+            [FromForm] string slug,
+            [FromForm] string? altTextEn,
+            [FromForm] string? altTextEs,
             [FromServices] IMediaAssetService service) =>
         {
-            if (!request.HasFormContentType) return Results.BadRequest("Ожидается multipart/form-data");
+            if (file == null || file.Length == 0)
+                return Results.BadRequest("Файл не выбран");
 
-            var form = await request.ReadFormAsync();
-            var file = form.Files.GetFile("file");
+            if (string.IsNullOrWhiteSpace(slug))
+                return Results.BadRequest("Slug обязателен");
 
-            if (file == null || file.Length == 0) return Results.BadRequest("Файл не выбран");
-
-            var dto = new MediaUploadDto(
-                form["slug"].ToString(),
-                form["altTextEn"].ToString(),
-                form["altTextEs"].ToString()
-            );
-
-            if (string.IsNullOrWhiteSpace(dto.Slug)) return Results.BadRequest("Slug обязателен");
+            var dto = new MediaUploadDto(slug, altTextEn, altTextEs);
 
             using var stream = file.OpenReadStream();
             var result = await service.UploadAsync(stream, file.FileName, file.ContentType, dto);
 
             return result != null
                 ? Results.Created($"/media/{result.Id}/{result.Slug}", result)
-                : Results.BadRequest("Ошибка загрузки (возможно, слаг уже занят)");
+                : Results.BadRequest("Ошибка загрузки (возможно, этот слаг уже используется)");
         })
         .DisableAntiforgery()
+        .WithOpenApi(operation =>
+        {
+            operation.Summary = "Загрузить новое изображение";
+            return operation;
+        })
         .WithName("UploadMedia");
 
         // 4. Обновление метаданных ассета
@@ -78,7 +92,7 @@ public static class MediaEndpoints
         })
         .WithName("UpdateMediaMetadata");
 
-        // 5. Удаление ассета (с защитой от каскадного удаления)
+        // 5. Удаление ассета
         group.MapDelete("/{id:guid}", async (Guid id, [FromServices] IMediaAssetService service) =>
         {
             var result = await service.DeleteAsync(id);
