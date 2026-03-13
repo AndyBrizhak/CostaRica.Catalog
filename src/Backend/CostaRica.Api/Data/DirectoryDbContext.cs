@@ -35,30 +35,36 @@ public class DirectoryDbContext : DbContext
         modelBuilder.Entity<City>()
             .HasOne(c => c.Province)
             .WithMany(p => p.Cities)
-            .HasForeignKey(c => c.ProvinceId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(c => c.ProvinceId);
 
-        // Теги -> Группа (Безопасное удаление и навигация)
-        modelBuilder.Entity<Tag>()
-            .HasOne(t => t.TagGroup)
-            .WithMany(tg => tg.Tags)
-            .HasForeignKey(t => t.TagGroupId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        // Бизнес-страница -> География
+        // Страница бизнеса -> Провинция
         modelBuilder.Entity<BusinessPage>()
-            .HasOne(p => p.Province)
+            .HasOne(b => b.Province)
             .WithMany()
-            .HasForeignKey(p => p.ProvinceId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .HasForeignKey(b => b.ProvinceId);
 
+        // Страница бизнеса -> Город
         modelBuilder.Entity<BusinessPage>()
-            .HasOne(p => p.City)
+            .HasOne(b => b.City)
             .WithMany()
-            .HasForeignKey(p => p.CityId)
+            .HasForeignKey(b => b.CityId);
+
+        // --- ГИБРИДНАЯ МОДЕЛЬ КАТЕГОРИЙ GOOGLE ---
+
+        // Настройка Primary Category (One-to-Many)
+        modelBuilder.Entity<BusinessPage>()
+            .HasOne(p => p.PrimaryCategory)
+            .WithMany() // Мы решили не добавлять обратную коллекцию в GoogleCategory
+            .HasForeignKey(p => p.PrimaryCategoryId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        // Many-to-Many связи
+        // Настройка Secondary Categories (Many-to-Many)
+        modelBuilder.Entity<BusinessPage>()
+            .HasMany(p => p.SecondaryCategories)
+            .WithMany()
+            .UsingEntity(j => j.ToTable("BusinessSecondaryCategories"));
+
+        // Many-to-Many для тегов и медиа
         modelBuilder.Entity<BusinessPage>()
             .HasMany(p => p.Tags)
             .WithMany()
@@ -69,37 +75,28 @@ public class DirectoryDbContext : DbContext
             .WithMany(m => m.BusinessPages)
             .UsingEntity(j => j.ToTable("BusinessMedia"));
 
-        modelBuilder.Entity<BusinessPage>()
-            .HasMany(p => p.GoogleCategories)
-            .WithMany()
-            .UsingEntity(j => j.ToTable("BusinessGoogleCategories"));
-
         // 3. Инфраструктура PostGIS
         modelBuilder.HasPostgresExtension("postgis");
 
         // 4. Конфигурация BusinessPage (JSONB и Geo)
         modelBuilder.Entity<BusinessPage>(entity =>
         {
-            // Явное указание типа для геолокации, чтобы избежать конфликтов при миграциях
             entity.Property(b => b.Location)
                 .HasColumnType("geography(Point, 4326)");
 
-            // SEO настройки
+            // SEO настройки (JSONB)
             entity.OwnsOne(b => b.Seo, seo =>
             {
                 seo.ToJson();
                 seo.OwnsMany(s => s.Hreflangs);
             });
 
-            // Контакты
+            // Контакты (JSONB)
             entity.OwnsOne(b => b.Contacts, c => { c.ToJson(); });
 
-            // Расписание
-            entity.OwnsMany(b => b.Schedule, schedule =>
-            {
-                schedule.ToJson();
-                schedule.OwnsMany(s => s.Intervals);
-            });
+            // Расписание (JSONB)
+            entity.Property(b => b.Schedule)
+                .HasColumnType("jsonb");
         });
     }
 }
