@@ -1,0 +1,48 @@
+﻿@base_url = http://localhost:5046
+@asset_id = f960599a-68a6-4a17-b1ff-14e2439aac65
+@slug = manual-test-image
+
+POST {{base_url}}/media/upload
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="slug"
+
+{{slug}}
+--WebAppBoundary
+Content-Disposition: form-data; name="altTextEn"
+
+Manual test image alt text
+--WebAppBoundary
+Content-Disposition: form-data; name="altTextEs"
+
+Texto alternativo de prueba
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test_input.png"
+Content-Type: image/png
+
+< D:\source\repos\CostaRica.Catalog\src\media_storage\test_input.png
+--WebAppBoundary--
+
+###
+
+GET {{base_url}}/media/{{asset_id}}/{{slug}}
+
+###
+
+GET {{base_url}}/media
+
+###
+
+PUT {{base_url}}/media/{{asset_id}}
+Content-Type: application/json
+
+{
+  "slug": "updated-manual-slug",
+  "altTextEn": "Updated Alt English",
+  "altTextEs": "Updated Alt Spanish"
+}
+
+###
+
+DELETE {{base_url}}/media/{{asset_id}}
