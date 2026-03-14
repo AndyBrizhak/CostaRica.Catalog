@@ -95,6 +95,8 @@ if (!args.Contains("ef"))
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
+app.MapGoogleCategoryEndpoints();
+
 // Добавляем мапинг медиа-эндпоинтов (файл создадим следующим шагом)
 app.MapMediaEndpoints();
 
