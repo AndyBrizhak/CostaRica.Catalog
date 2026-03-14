@@ -10,37 +10,26 @@ public static class GoogleCategoryEndpoints
     {
         var group = routes.MapGroup("/api/google-categories").WithTags("GoogleCategories");
 
-        // GET /api/google-categories
-        // Теперь тоже возвращает X-Total-Count
-        group.MapGet("/", async (IGoogleCategoryService service, HttpResponse response) =>
-        {
-            var categories = (await service.GetAllAsync()).ToList();
-
-            response.Headers.Append("X-Total-Count", categories.Count.ToString());
-            response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
-
-            return Results.Ok(categories);
-        })
-        .WithName("GetGoogleCategories");
-
-        // GET /api/google-categories/search
-        group.MapGet("/search", async (
+        // Единый эндпоинт для списка, поиска и пагинации
+        // GET /api/google-categories?searchTerm=...&page=1&pageSize=20&sortBy=NameEn&isAscending=true
+        group.MapGet("/", async (
             [FromQuery] string? searchTerm,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 20,
+            [FromQuery] string? sortBy = "NameEn",
+            [FromQuery] bool isAscending = true,
             IGoogleCategoryService service = default!,
             HttpResponse response = default!) =>
         {
-            var (items, totalCount) = await service.SearchAsync(searchTerm, page, pageSize);
+            var (items, totalCount) = await service.SearchAsync(searchTerm, page, pageSize, sortBy, isAscending);
 
             response.Headers.Append("X-Total-Count", totalCount.ToString());
             response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
             return Results.Ok(items);
         })
-        .WithName("SearchGoogleCategories");
+        .WithName("GetGoogleCategories");
 
-        // Остальные методы CRUD (без изменений)
         group.MapGet("/{id:guid}", async (Guid id, IGoogleCategoryService service) =>
         {
             var result = await service.GetByIdAsync(id);

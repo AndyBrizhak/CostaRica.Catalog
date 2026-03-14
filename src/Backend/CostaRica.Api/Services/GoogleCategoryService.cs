@@ -6,16 +6,6 @@ namespace CostaRica.Api.Services;
 
 public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryService
 {
-    public async Task<IEnumerable<GoogleCategoryResponseDto>> GetAllAsync()
-    {
-        var categories = await db.GoogleCategories
-            .AsNoTracking()
-            .OrderBy(c => c.NameEn)
-            .ToListAsync();
-
-        return categories.Select(MapToDto);
-    }
-
     public async Task<GoogleCategoryResponseDto?> GetByIdAsync(Guid id)
     {
         var category = await db.GoogleCategories
@@ -34,9 +24,47 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
         return category is null ? null : MapToDto(category);
     }
 
+    public async Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> SearchAsync(
+        string? searchTerm,
+        int page = 1,
+        int pageSize = 20,
+        string? sortBy = "NameEn",
+        bool isAscending = true)
+    {
+        var query = db.GoogleCategories.AsNoTracking().AsQueryable();
+
+        // 1. Фильтрация (если searchTerm пустой, вернет всё)
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var lowerTerm = searchTerm.ToLower();
+            query = query.Where(c =>
+                c.NameEn.ToLower().Contains(lowerTerm) ||
+                c.NameEs.ToLower().Contains(lowerTerm) ||
+                c.Gcid.ToLower().Contains(lowerTerm));
+        }
+
+        // 2. Метаданные
+        var totalCount = await query.CountAsync();
+
+        // 3. Сортировка
+        query = sortBy?.ToLower() switch
+        {
+            "namees" => isAscending ? query.OrderBy(c => c.NameEs) : query.OrderByDescending(c => c.NameEs),
+            "gcid" => isAscending ? query.OrderBy(c => c.Gcid) : query.OrderByDescending(c => c.Gcid),
+            _ => isAscending ? query.OrderBy(c => c.NameEn) : query.OrderByDescending(c => c.NameEn)
+        };
+
+        // 4. Пагинация
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return (items.Select(MapToDto), totalCount);
+    }
+
     public async Task<GoogleCategoryResponseDto?> CreateAsync(GoogleCategoryUpsertDto dto)
     {
-        // Проверка на уникальность Gcid (например, "restaurant")
         var exists = await db.GoogleCategories.AnyAsync(c => c.Gcid == dto.Gcid);
         if (exists) return null;
 
@@ -75,36 +103,6 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
         db.GoogleCategories.Remove(category);
         await db.SaveChangesAsync();
         return true;
-    }
-
-    public async Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> SearchAsync(
-    string? searchTerm,
-    int page = 1,
-    int pageSize = 20)
-    {
-        var query = db.GoogleCategories.AsNoTracking().AsQueryable();
-
-        // 1. Фильтрация
-        if (!string.IsNullOrWhiteSpace(searchTerm))
-        {
-            var lowerTerm = searchTerm.ToLower();
-            query = query.Where(c =>
-                c.NameEn.ToLower().Contains(lowerTerm) ||
-                c.NameEs.ToLower().Contains(lowerTerm) ||
-                c.Gcid.ToLower().Contains(lowerTerm));
-        }
-
-        // 2. Подсчет общего количества (до пагинации)
-        var totalCount = await query.CountAsync();
-
-        // 3. Пагинация и получение данных
-        var items = await query
-            .OrderBy(c => c.NameEn)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
-
-        return (items.Select(MapToDto), totalCount);
     }
 
     private static GoogleCategoryResponseDto MapToDto(GoogleCategory c)
