@@ -31,6 +31,7 @@ builder.Services.AddScoped<IProvinceService, ProvinceService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
+builder.Services.AddScoped<IGoogleCategoryService, GoogleCategoryService>();
 
 // --- НОВОЕ: Регистрация системы медиа-ассетов ---
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
