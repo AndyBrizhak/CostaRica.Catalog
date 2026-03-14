@@ -11,14 +11,36 @@ public static class GoogleCategoryEndpoints
         var group = routes.MapGroup("/api/google-categories").WithTags("GoogleCategories");
 
         // GET /api/google-categories
-        group.MapGet("/", async (IGoogleCategoryService service) =>
+        // Теперь тоже возвращает X-Total-Count
+        group.MapGet("/", async (IGoogleCategoryService service, HttpResponse response) =>
         {
-            var categories = await service.GetAllAsync();
+            var categories = (await service.GetAllAsync()).ToList();
+
+            response.Headers.Append("X-Total-Count", categories.Count.ToString());
+            response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
+
             return Results.Ok(categories);
         })
         .WithName("GetGoogleCategories");
 
-        // GET /api/google-categories/{id}
+        // GET /api/google-categories/search
+        group.MapGet("/search", async (
+            [FromQuery] string? searchTerm,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 20,
+            IGoogleCategoryService service = default!,
+            HttpResponse response = default!) =>
+        {
+            var (items, totalCount) = await service.SearchAsync(searchTerm, page, pageSize);
+
+            response.Headers.Append("X-Total-Count", totalCount.ToString());
+            response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
+
+            return Results.Ok(items);
+        })
+        .WithName("SearchGoogleCategories");
+
+        // Остальные методы CRUD (без изменений)
         group.MapGet("/{id:guid}", async (Guid id, IGoogleCategoryService service) =>
         {
             var result = await service.GetByIdAsync(id);
@@ -26,7 +48,6 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategoryById");
 
-        // GET /api/google-categories/gcid/{gcid}
         group.MapGet("/gcid/{gcid}", async (string gcid, IGoogleCategoryService service) =>
         {
             var result = await service.GetByGcidAsync(gcid);
@@ -34,7 +55,6 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategoryByGcid");
 
-        // POST /api/google-categories
         group.MapPost("/", async (GoogleCategoryUpsertDto dto, IGoogleCategoryService service) =>
         {
             var result = await service.CreateAsync(dto);
@@ -46,7 +66,6 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("CreateGoogleCategory");
 
-        // PUT /api/google-categories/{id}
         group.MapPut("/{id:guid}", async (Guid id, GoogleCategoryUpsertDto dto, IGoogleCategoryService service) =>
         {
             var updated = await service.UpdateAsync(id, dto);
@@ -54,7 +73,6 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("UpdateGoogleCategory");
 
-        // DELETE /api/google-categories/{id}
         group.MapDelete("/{id:guid}", async (Guid id, IGoogleCategoryService service) =>
         {
             var deleted = await service.DeleteAsync(id);
