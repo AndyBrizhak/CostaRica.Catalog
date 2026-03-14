@@ -77,6 +77,36 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
         return true;
     }
 
+    public async Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> SearchAsync(
+    string? searchTerm,
+    int page = 1,
+    int pageSize = 20)
+    {
+        var query = db.GoogleCategories.AsNoTracking().AsQueryable();
+
+        // 1. Фильтрация
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var lowerTerm = searchTerm.ToLower();
+            query = query.Where(c =>
+                c.NameEn.ToLower().Contains(lowerTerm) ||
+                c.NameEs.ToLower().Contains(lowerTerm) ||
+                c.Gcid.ToLower().Contains(lowerTerm));
+        }
+
+        // 2. Подсчет общего количества (до пагинации)
+        var totalCount = await query.CountAsync();
+
+        // 3. Пагинация и получение данных
+        var items = await query
+            .OrderBy(c => c.NameEn)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync();
+
+        return (items.Select(MapToDto), totalCount);
+    }
+
     private static GoogleCategoryResponseDto MapToDto(GoogleCategory c)
         => new(c.Id, c.Gcid, c.NameEn, c.NameEs);
 }
