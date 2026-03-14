@@ -50,12 +50,27 @@ builder.Services.AddImageSharp()
         options.CacheRootPath = Path.Combine(storagePath, "is-cache");
     });
 
+// --- Настройка CORS (Разрешаем доступ для фронтенда) ---
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .WithExposedHeaders("X-Total-Count"); // Разрешаем видеть заголовок пагинации
+    });
+});
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
 app.UseImageSharp();
 app.MapDefaultEndpoints();
+
+// ВКЛЮЧАЕМ CORS ТУТ:
+app.UseCors("AllowAll");
 
 // Запуск миграций при старте
 if (!args.Contains("ef"))
