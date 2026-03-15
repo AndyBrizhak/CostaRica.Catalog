@@ -2,23 +2,36 @@
 
 namespace CostaRica.Api.Services;
 
+/// <summary>
+/// Интерфейс для управления бизнес-логикой провинций.
+/// </summary>
 public interface IProvinceService
 {
-    // Получить все провинции. Параметр includeCities позволяет подгрузить города.
-    Task<IEnumerable<ProvinceResponseDto>> GetAllAsync(bool includeCities = false);
+    /// <summary>
+    /// Получить список провинций с поддержкой поиска, фильтрации и пагинации.
+    /// </summary>
+    /// <param name="searchTerm">Строка поиска (по имени или слагу).</param>
+    /// <param name="page">Номер страницы (начиная с 1).</param>
+    /// <param name="pageSize">Количество записей на странице.</param>
+    /// <param name="sortBy">Поле для сортировки.</param>
+    /// <param name="isAscending">Направление сортировки.</param>
+    /// <param name="includeCities">Флаг включения связанных городов.</param>
+    /// <returns>Кортеж, содержащий список провинций и общее количество записей, подходящих под условия поиска.</returns>
+    Task<(IEnumerable<ProvinceResponseDto> Items, int TotalCount)> GetAllAsync(
+        string? searchTerm = null,
+        int page = 1,
+        int pageSize = 10,
+        string? sortBy = null,
+        bool isAscending = true,
+        bool includeCities = false);
 
-    // Получить провинцию по ID.
     Task<ProvinceResponseDto?> GetByIdAsync(Guid id, bool includeCities = false);
 
-    // Получить провинцию по ее Slug (необходимо для публичных страниц каталога).
     Task<ProvinceResponseDto?> GetBySlugAsync(string slug, bool includeCities = false);
 
-    // Создать провинцию (возвращает null, если Slug уже занят)
     Task<ProvinceResponseDto?> CreateAsync(ProvinceUpsertDto dto);
 
-    // Обновить данные провинции
     Task<bool> UpdateAsync(Guid id, ProvinceUpsertDto dto);
 
-    // Удалить провинцию
     Task<bool> DeleteAsync(Guid id);
 }
