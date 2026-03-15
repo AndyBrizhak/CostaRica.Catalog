@@ -27,7 +27,18 @@ public class BusinessPage
     // Точные координаты на карте
     public Point Location { get; set; } = default!;
 
-    // --- ДАННЫЕ В ФОРМАТЕ JSONB (наши вспомогательные классы) ---
+    // --- КАТЕГОРИИ GOOGLE (ГИБРИДНАЯ МОДЕЛЬ) ---
+
+    // 1. Основная категория (Primary) - определяет суть бизнеса и тип Schema.org
+    // Это и есть то "дополнительное поле", которое связывает бизнес с иерархией Google
+    public Guid? PrimaryCategoryId { get; set; }
+    public GoogleCategory? PrimaryCategory { get; set; }
+
+    // 2. Дополнительные категории (Secondary) - для SEO и поиска
+    // Переименовано из GoogleCategories для ясности
+    public ICollection<GoogleCategory> SecondaryCategories { get; set; } = new List<GoogleCategory>();
+
+    // --- ДАННЫЕ В ФОРМАТЕ JSONB (вспомогательные классы) ---
     public BusinessContacts Contacts { get; set; } = new();
     public List<ScheduleDay> Schedule { get; set; } = [];
     public BusinessSeoSettings Seo { get; set; } = new();
@@ -35,9 +46,6 @@ public class BusinessPage
     // --- СВЯЗИ MANY-TO-MANY ---
     // Визуальные теги (Пицца, Бассейн и т.д.)
     public ICollection<Tag> Tags { get; set; } = new List<Tag>();
-
-    // Скрытые категории Google для SEO (GCID)
-    public ICollection<GoogleCategory> GoogleCategories { get; set; } = new List<GoogleCategory>();
 
     // Картинки из медиа-библиотеки
     public ICollection<MediaAsset> Media { get; set; } = new List<MediaAsset>();

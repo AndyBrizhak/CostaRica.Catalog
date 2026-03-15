@@ -31,6 +31,7 @@ builder.Services.AddScoped<IProvinceService, ProvinceService>();
 builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
+builder.Services.AddScoped<IGoogleCategoryService, GoogleCategoryService>();
 
 // --- НОВОЕ: Регистрация системы медиа-ассетов ---
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
@@ -49,12 +50,27 @@ builder.Services.AddImageSharp()
         options.CacheRootPath = Path.Combine(storagePath, "is-cache");
     });
 
+// --- Настройка CORS (Разрешаем доступ для фронтенда) ---
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .WithExposedHeaders("X-Total-Count"); // Разрешаем видеть заголовок пагинации
+    });
+});
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
 app.UseImageSharp();
 app.MapDefaultEndpoints();
+
+// ВКЛЮЧАЕМ CORS ТУТ:
+app.UseCors("AllowAll");
 
 // Запуск миграций при старте
 if (!args.Contains("ef"))
@@ -94,6 +110,8 @@ if (!args.Contains("ef"))
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
+app.MapGoogleCategoryEndpoints();
+
 // Добавляем мапинг медиа-эндпоинтов (файл создадим следующим шагом)
 app.MapMediaEndpoints();
 
