@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using CostaRica.Api.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace CostaRica.Api.Data;
 
@@ -21,7 +22,10 @@ public class DirectoryDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        // 1. Уникальные индексы для Slugs
+        // 1. Инфраструктура PostGIS
+        modelBuilder.HasPostgresExtension("postgis");
+
+        // 2. Уникальные индексы для Slugs (URL-адресов)
         modelBuilder.Entity<Province>().HasIndex(p => p.Slug).IsUnique();
         modelBuilder.Entity<City>().HasIndex(c => c.Slug).IsUnique();
         modelBuilder.Entity<TagGroup>().HasIndex(tg => tg.Slug).IsUnique();
@@ -29,82 +33,79 @@ public class DirectoryDbContext : DbContext
         modelBuilder.Entity<MediaAsset>().HasIndex(m => m.Slug).IsUnique();
         modelBuilder.Entity<BusinessPage>().HasIndex(b => b.Slug).IsUnique();
 
-        // 2. Настройка связей (ГЕОГРАФИЯ - Запрет каскадного удаления)
-
+        // 3. Базовые связи (География и Теги)
         modelBuilder.Entity<City>()
             .HasOne(c => c.Province)
             .WithMany(p => p.Cities)
             .HasForeignKey(c => c.ProvinceId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        modelBuilder.Entity<BusinessPage>()
-            .HasOne(b => b.Province)
-            .WithMany()
-            .HasForeignKey(b => b.ProvinceId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        modelBuilder.Entity<BusinessPage>()
-            .HasOne(b => b.City)
-            .WithMany()
-            .HasForeignKey(b => b.CityId)
-            .OnDelete(DeleteBehavior.SetNull); // Если город удалят, бизнес останется в провинции
-
-        // 3. Теги (Запрет каскадного удаления групп)
         modelBuilder.Entity<Tag>()
             .HasOne(t => t.TagGroup)
             .WithMany(tg => tg.Tags)
             .HasForeignKey(t => t.TagGroupId)
             .OnDelete(DeleteBehavior.Restrict);
 
-        // 4. ГИБРИДНАЯ МОДЕЛЬ КАТЕГОРИЙ GOOGLE
-
-        // Primary Category (One-to-Many)
-        modelBuilder.Entity<BusinessPage>()
-            .HasOne(p => p.PrimaryCategory)
-            .WithMany()
-            .HasForeignKey(p => p.PrimaryCategoryId)
-            .OnDelete(DeleteBehavior.SetNull);
-
-        // Secondary Categories (Many-to-Many)
-        modelBuilder.Entity<BusinessPage>()
-            .HasMany(p => p.SecondaryCategories)
-            .WithMany()
-            .UsingEntity(j => j.ToTable("BusinessSecondaryCategories"));
-
-        // Другие Many-to-Many
-        modelBuilder.Entity<BusinessPage>()
-            .HasMany(p => p.Tags)
-            .WithMany()
-            .UsingEntity(j => j.ToTable("BusinessTags"));
-
-        modelBuilder.Entity<BusinessPage>()
-            .HasMany(p => p.Media)
-            .WithMany(m => m.BusinessPages)
-            .UsingEntity(j => j.ToTable("BusinessMedia"));
-
-        // 5. Инфраструктура PostGIS
-        modelBuilder.HasPostgresExtension("postgis");
-
-        // 6. Конфигурация BusinessPage (JSONB и Geo)
+        // 4. Конфигурация BusinessPage
         modelBuilder.Entity<BusinessPage>(entity =>
         {
+            // Геолокация (Point в формате WGS84)
             entity.Property(b => b.Location)
                 .HasColumnType("geography(Point, 4326)");
 
-            // SEO настройки (JSONB)
+            // Внешние ключи для географии
+            entity.HasOne(b => b.Province)
+                .WithMany()
+                .HasForeignKey(b => b.ProvinceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasOne(b => b.City)
+                .WithMany()
+                .HasForeignKey(b => b.CityId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // КАТЕГОРИИ GOOGLE (ГИБРИДНАЯ МОДЕЛЬ)
+            // Основная категория (Primary)
+            entity.HasOne(b => b.PrimaryCategory)
+                .WithMany()
+                .HasForeignKey(b => b.PrimaryCategoryId)
+                .OnDelete(DeleteBehavior.SetNull);
+
+            // Дополнительные категории (Secondary) — Many-to-Many
+            entity.HasMany(b => b.SecondaryCategories)
+                .WithMany()
+                .UsingEntity(j => j.ToTable("BusinessSecondaryCategories"));
+
+            // Связи Many-to-Many (Tags и Media)
+            entity.HasMany(b => b.Tags)
+                .WithMany()
+                .UsingEntity(j => j.ToTable("BusinessTags"));
+
+            entity.HasMany(b => b.Media)
+                .WithMany(m => m.BusinessPages)
+                .UsingEntity(j => j.ToTable("BusinessMedia"));
+
+            // 5. Данные в формате JSONB
+            // SEO настройки
             entity.OwnsOne(b => b.Seo, seo =>
             {
                 seo.ToJson();
                 seo.OwnsMany(s => s.Hreflangs);
             });
 
-            // Контакты (JSONB)
-            entity.OwnsOne(b => b.Contacts, c => { c.ToJson(); });
+            // Контакты
+            entity.OwnsOne(b => b.Contacts, c =>
+            {
+                c.ToJson();
+            });
 
-            // Расписание (JSONB) - Делаем опциональным
-            entity.Property(b => b.Schedule)
-                .HasColumnType("jsonb")
-                .IsRequired(false);
+            // Расписание с вложенной коллекцией интервалов
+            entity.OwnsMany(b => b.Schedule, s =>
+            {
+                s.ToJson();
+                // Явно указываем владение вложенным списком Intervals внутри JSON
+                s.OwnsMany(sd => sd.Intervals);
+            });
         });
     }
 }
