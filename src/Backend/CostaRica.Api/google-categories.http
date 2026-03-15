@@ -1,0 +1,74 @@
+﻿@base_url = http://localhost:5046
+@contentType = application/json
+@categoryId = 029d6b68-3d08-48b9-8dcf-6343ab7a8468
+@gcid = test_manual_entry
+@gcid_updated = test_manual_entry_updated
+
+###
+# 1. Получить список всех категорий
+GET {{base_url}}/api/google-categories
+Accept: {{contentType}}
+
+###
+# 2. Поиск с фильтрацией и пагинацией
+GET {{base_url}}/api/google-categories?searchTerm=coffee&page=1&pageSize=5&sortBy=NameEs&isAscending=false
+Accept: {{contentType}}
+
+###
+# 3. Создать новую категорию
+POST {{base_url}}/api/google-categories
+Content-Type: {{contentType}}
+
+{
+  "gcid": "{{gcid}}",
+  "nameEn": "Manual Test Category",
+  "nameEs": "Categoría de prueba manual"
+}
+
+###
+# 4. Получить категорию по ID
+GET {{base_url}}/api/google-categories/{{categoryId}}
+Accept: {{contentType}}
+
+###
+# 5. Получить категорию по техническому коду GCID
+GET {{base_url}}/api/google-categories/gcid/{{gcid}}
+Accept: {{contentType}}
+
+###
+# 6. Обновить данные категории (меняет GCID на обновленный)
+PUT {{base_url}}/api/google-categories/{{categoryId}}
+Content-Type: {{contentType}}
+
+{
+  "gcid": "{{gcid_updated}}",
+  "nameEn": "Updated Category Name",
+  "nameEs": "Nombre de categoría actualizado"
+}
+
+###
+# 7. Получить категорию по новому коду GCID после обновления
+GET {{base_url}}/api/google-categories/gcid/{{gcid_updated}}
+Accept: {{contentType}}
+
+###
+# 8. Массовый импорт тестовых записей
+POST {{base_url}}/api/google-categories/bulk
+Content-Type: {{contentType}}
+
+[
+  {
+    "gcid": "bulk_test_1",
+    "nameEn": "Bulk Test One",
+    "nameEs": "Prueba masiva uno"
+  },
+  {
+    "gcid": "bulk_test_2",
+    "nameEn": "Bulk Test Two",
+    "nameEs": "Prueba masiva dos"
+  }
+]
+
+###
+# 9. Удалить тестовую категорию
+DELETE {{base_url}}/api/google-categories/{{categoryId}}

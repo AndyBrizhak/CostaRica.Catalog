@@ -10,7 +10,6 @@ public static class GoogleCategoryEndpoints
     {
         var group = routes.MapGroup("/api/google-categories").WithTags("GoogleCategories");
 
-        // Единый эндпоинт для списка и поиска
         group.MapGet("/", async (
             [FromQuery] string? searchTerm,
             [FromQuery] int page = 1,
@@ -27,7 +26,6 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategories");
 
-        // ЭНДПОИНТ ДЛЯ МАССОВОГО ИМПОРТА
         group.MapPost("/bulk", async (List<GoogleCategoryImportDto> categories, IGoogleCategoryService service) =>
         {
             var count = await service.BulkImportAsync(categories);
@@ -41,6 +39,14 @@ public static class GoogleCategoryEndpoints
             return result is not null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("GetGoogleCategoryById");
+
+        // ДОБАВЛЕНО: Поиск по GCID для поддержки TEST 5
+        group.MapGet("/gcid/{gcid}", async (string gcid, IGoogleCategoryService service) =>
+        {
+            var result = await service.GetByGcidAsync(gcid);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetGoogleCategoryByGcid");
 
         group.MapPost("/", async (GoogleCategoryUpsertDto dto, IGoogleCategoryService service) =>
         {
