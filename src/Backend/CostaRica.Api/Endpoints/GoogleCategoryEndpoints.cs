@@ -10,8 +10,7 @@ public static class GoogleCategoryEndpoints
     {
         var group = routes.MapGroup("/api/google-categories").WithTags("GoogleCategories");
 
-        // Единый эндпоинт для списка, поиска и пагинации
-        // GET /api/google-categories?searchTerm=...&page=1&pageSize=20&sortBy=NameEn&isAscending=true
+        // Единый эндпоинт для списка и поиска
         group.MapGet("/", async (
             [FromQuery] string? searchTerm,
             [FromQuery] int page = 1,
@@ -22,13 +21,19 @@ public static class GoogleCategoryEndpoints
             HttpResponse response = default!) =>
         {
             var (items, totalCount) = await service.SearchAsync(searchTerm, page, pageSize, sortBy, isAscending);
-
             response.Headers.Append("X-Total-Count", totalCount.ToString());
             response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
-
             return Results.Ok(items);
         })
         .WithName("GetGoogleCategories");
+
+        // ЭНДПОИНТ ДЛЯ МАССОВОГО ИМПОРТА
+        group.MapPost("/bulk", async (List<GoogleCategoryImportDto> categories, IGoogleCategoryService service) =>
+        {
+            var count = await service.BulkImportAsync(categories);
+            return Results.Ok(new { ImportedCount = count });
+        })
+        .WithName("BulkImportGoogleCategories");
 
         group.MapGet("/{id:guid}", async (Guid id, IGoogleCategoryService service) =>
         {
@@ -37,20 +42,10 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategoryById");
 
-        group.MapGet("/gcid/{gcid}", async (string gcid, IGoogleCategoryService service) =>
-        {
-            var result = await service.GetByGcidAsync(gcid);
-            return result is not null ? Results.Ok(result) : Results.NotFound();
-        })
-        .WithName("GetGoogleCategoryByGcid");
-
         group.MapPost("/", async (GoogleCategoryUpsertDto dto, IGoogleCategoryService service) =>
         {
             var result = await service.CreateAsync(dto);
-            if (result is null)
-            {
-                return Results.Conflict(new { error = $"Category with Gcid '{dto.Gcid}' already exists." });
-            }
+            if (result is null) return Results.Conflict(new { error = $"Category with Gcid '{dto.Gcid}' already exists." });
             return Results.Created($"/api/google-categories/{result.Id}", result);
         })
         .WithName("CreateGoogleCategory");

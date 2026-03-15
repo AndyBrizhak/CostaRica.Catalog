@@ -7,7 +7,6 @@ public interface IGoogleCategoryService
     Task<GoogleCategoryResponseDto?> GetByIdAsync(Guid id);
     Task<GoogleCategoryResponseDto?> GetByGcidAsync(string gcid);
 
-    // Единый метод для списка, поиска, пагинации и сортировки
     Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> SearchAsync(
         string? searchTerm,
         int page = 1,
@@ -16,6 +15,10 @@ public interface IGoogleCategoryService
         bool isAscending = true);
 
     Task<GoogleCategoryResponseDto?> CreateAsync(GoogleCategoryUpsertDto dto);
+
+    // МАССОВЫЙ ИМПОРТ
+    Task<int> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories);
+
     Task<bool> UpdateAsync(Guid id, GoogleCategoryUpsertDto dto);
     Task<bool> DeleteAsync(Guid id);
 }
