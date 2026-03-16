@@ -10,16 +10,29 @@ public static class ProvinceEndpoints
     {
         var group = routes.MapGroup("/api/provinces").WithTags("Provinces");
 
-        // GET /api/provinces?includeCities=false
-        // Добавили "= false", чтобы параметр стал необязательным
-        group.MapGet("/", async (IProvinceService service, [FromQuery] bool includeCities = false) =>
+        // GET /api/provinces
+        // Поддержка поиска, пагинации и заголовка X-Total-Count для react-admin
+        group.MapGet("/", async (
+            [FromQuery] string? searchTerm,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 10,
+            [FromQuery] string? sortBy = "Name",
+            [FromQuery] bool isAscending = true,
+            [FromQuery] bool includeCities = false,
+            IProvinceService service = default!,
+            HttpResponse response = default!) =>
         {
-            var provinces = await service.GetAllAsync(includeCities);
-            return Results.Ok(provinces);
+            var (items, totalCount) = await service.GetAllAsync(searchTerm, page, pageSize, sortBy, isAscending, includeCities);
+
+            // Добавляем заголовки для react-admin
+            response.Headers.Append("X-Total-Count", totalCount.ToString());
+            response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
+
+            return Results.Ok(items);
         })
         .WithName("GetProvinces");
 
-        // GET /api/provinces/{id}?includeCities=false
+        // GET /api/provinces/{id}
         group.MapGet("/{id:guid}", async (Guid id, IProvinceService service, [FromQuery] bool includeCities = false) =>
         {
             var result = await service.GetByIdAsync(id, includeCities);
@@ -27,7 +40,7 @@ public static class ProvinceEndpoints
         })
         .WithName("GetProvinceById");
 
-        // GET /api/provinces/slug/{slug}?includeCities=false
+        // GET /api/provinces/slug/{slug}
         group.MapGet("/slug/{slug}", async (string slug, IProvinceService service, [FromQuery] bool includeCities = false) =>
         {
             var result = await service.GetBySlugAsync(slug, includeCities);
@@ -35,6 +48,7 @@ public static class ProvinceEndpoints
         })
         .WithName("GetProvinceBySlug");
 
+        // POST /api/provinces
         group.MapPost("/", async (ProvinceUpsertDto dto, IProvinceService service) =>
         {
             var result = await service.CreateAsync(dto);
@@ -46,6 +60,7 @@ public static class ProvinceEndpoints
         })
         .WithName("CreateProvince");
 
+        // PUT /api/provinces/{id}
         group.MapPut("/{id:guid}", async (Guid id, ProvinceUpsertDto dto, IProvinceService service) =>
         {
             var updated = await service.UpdateAsync(id, dto);
@@ -53,6 +68,7 @@ public static class ProvinceEndpoints
         })
         .WithName("UpdateProvince");
 
+        // DELETE /api/provinces/{id}
         group.MapDelete("/{id:guid}", async (Guid id, IProvinceService service) =>
         {
             var deleted = await service.DeleteAsync(id);

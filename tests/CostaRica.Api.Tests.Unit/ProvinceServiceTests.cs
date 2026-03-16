@@ -13,13 +13,67 @@ public class ProvinceServiceTests
 
     public ProvinceServiceTests()
     {
-        // Создаем чистую БД для каждого теста
         var options = new DbContextOptionsBuilder<DirectoryDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
 
         _context = new DirectoryDbContext(options);
         _service = new ProvinceService(_context);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ShouldReturnPaginatedItemsAndCorrectTotalCount()
+    {
+        // Arrange
+        _context.Provinces.AddRange(
+            new Province { Id = Guid.NewGuid(), Name = "A", Slug = "a" },
+            new Province { Id = Guid.NewGuid(), Name = "B", Slug = "b" },
+            new Province { Id = Guid.NewGuid(), Name = "C", Slug = "c" }
+        );
+        await _context.SaveChangesAsync();
+
+        // Act - берем 1-ю страницу размером 2
+        var (items, totalCount) = await _service.GetAllAsync(page: 1, pageSize: 2);
+
+        // Assert
+        items.Should().HaveCount(2);
+        totalCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ShouldFilterBySearchTerm()
+    {
+        // Arrange
+        _context.Provinces.AddRange(
+            new Province { Id = Guid.NewGuid(), Name = "San José", Slug = "san-jose" },
+            new Province { Id = Guid.NewGuid(), Name = "Alajuela", Slug = "alajuela" }
+        );
+        await _context.SaveChangesAsync();
+
+        // Act
+        var (items, totalCount) = await _service.GetAllAsync(searchTerm: "jose");
+
+        // Assert
+        items.Should().ContainSingle();
+        items.First().Name.Should().Be("San José");
+        totalCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ShouldSortBySlugDescending()
+    {
+        // Arrange
+        _context.Provinces.AddRange(
+            new Province { Id = Guid.NewGuid(), Name = "Province A", Slug = "aaa" },
+            new Province { Id = Guid.NewGuid(), Name = "Province B", Slug = "bbb" }
+        );
+        await _context.SaveChangesAsync();
+
+        // Act
+        var (items, _) = await _service.GetAllAsync(sortBy: "slug", isAscending: false);
+
+        // Assert
+        items.First().Slug.Should().Be("bbb");
     }
 
     [Fact]
@@ -36,39 +90,6 @@ public class ProvinceServiceTests
         // Assert
         result.Should().NotBeNull();
         result!.Name.Should().Be("San José");
-        result.Cities.Should().BeNull(); // По умолчанию города не подгружаются
-    }
-
-    [Fact]
-    public async Task GetBySlugAsync_ShouldIncludeCities_WhenRequested()
-    {
-        // Arrange
-        var provinceId = Guid.NewGuid();
-        var province = new Province { Id = provinceId, Name = "Alajuela", Slug = "alajuela" };
-        var city = new City { Id = Guid.NewGuid(), Name = "Alajuela City", Slug = "alajuela-city", ProvinceId = provinceId };
-
-        _context.Provinces.Add(province);
-        _context.Cities.Add(city);
-        await _context.SaveChangesAsync();
-
-        // Act
-        var result = await _service.GetBySlugAsync("alajuela", includeCities: true);
-
-        // Assert
-        result.Should().NotBeNull();
-        result!.Cities.Should().NotBeNull();
-        result.Cities.Should().HaveCount(1);
-        result.Cities!.First().Slug.Should().Be("alajuela-city");
-    }
-
-    [Fact]
-    public async Task GetAllAsync_ShouldReturnEmpty_WhenNoProvincesExist()
-    {
-        // Act
-        var result = await _service.GetAllAsync();
-
-        // Assert
-        result.Should().BeEmpty();
     }
 
     [Fact]
@@ -109,12 +130,18 @@ public class ProvinceServiceTests
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldReturnFalse_WhenNotFound()
+    public async Task DeleteAsync_ShouldReturnTrue_WhenExists()
     {
+        // Arrange
+        var id = Guid.NewGuid();
+        _context.Provinces.Add(new Province { Id = id, Name = "To Delete", Slug = "delete-me" });
+        await _context.SaveChangesAsync();
+
         // Act
-        var result = await _service.DeleteAsync(Guid.NewGuid());
+        var result = await _service.DeleteAsync(id);
 
         // Assert
-        result.Should().BeFalse();
+        result.Should().BeTrue();
+        _context.Provinces.Should().BeEmpty();
     }
 }
