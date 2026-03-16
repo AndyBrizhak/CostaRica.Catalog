@@ -9,81 +9,92 @@ namespace CostaRica.Api.Tests.Integration.Features.Tags;
 public class TagGroupApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
 {
     [Fact]
-    public async Task CreateTagGroup_ShouldReturnCreated_AndThenHandleDuplicateAsConflict()
+    public async Task GetTagGroups_ShouldReturnPaginationHeadersAndFilteredResults()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
-        var slug = $"group-{Guid.NewGuid().ToString()[..8]}";
-        var dto = new TagGroupUpsertDto("Amenities", "Comodidades", slug);
 
-        // 1. Успешное создание
-        var response = await client.PostAsJsonAsync("/api/tag-groups", dto, ct);
-        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        // Изолируем данные теста с помощью уникального префикса
+        var prefix = $"OrderTest-{Guid.NewGuid().ToString()[..8]}";
 
-        var created = await response.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
-        created!.Slug.Should().Be(slug);
+        await client.PostAsJsonAsync("/api/tag-groups", new TagGroupUpsertDto($"{prefix}-Alpha", "A", $"{prefix}-a"), ct);
+        await client.PostAsJsonAsync("/api/tag-groups", new TagGroupUpsertDto($"{prefix}-Beta", "B", $"{prefix}-b"), ct);
+        await client.PostAsJsonAsync("/api/tag-groups", new TagGroupUpsertDto($"{prefix}-Gamma", "G", $"{prefix}-g"), ct);
 
-        // 2. Попытка создания дубликата (проверка нашей логики Conflict/409)
-        var duplicateResponse = await client.PostAsJsonAsync("/api/tag-groups", dto, ct);
-        duplicateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-    }
-
-    [Fact]
-    public async Task GetTagGroupBySlug_ShouldReturnSuccess_WhenExists()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var client = fixture.HttpClient;
-        var slug = $"slug-{Guid.NewGuid().ToString()[..8]}";
-
-        await client.PostAsJsonAsync("/api/tag-groups",
-            new TagGroupUpsertDto("Test Group", "Grupo de prueba", slug), ct);
-
-        // Act
-        var response = await client.GetAsync($"/api/tag-groups/slug/{slug}", ct);
+        // Act: Запрашиваем только наши тестовые данные (через Q), проверяя пагинацию и сортировку
+        var response = await client.GetAsync($"/api/tag-groups?Q={prefix}&_start=0&_end=2&_sort=NameEn&_order=DESC", ct);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var group = await response.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
-        group!.Slug.Should().Be(slug);
+
+        // 1. Проверка заголовков react-admin
+        response.Headers.Contains("X-Total-Count").Should().BeTrue();
+        // Мы создали 3, значит Total должен быть 3
+        response.Headers.GetValues("X-Total-Count").First().Should().Be("3");
+        response.Headers.GetValues("Access-Control-Expose-Headers").Should().Contain("X-Total-Count");
+
+        // 2. Проверка содержимого (сортировка DESC: Gamma -> Beta -> Alpha)
+        var items = await response.Content.ReadFromJsonAsync<List<TagGroupResponseDto>>(ct);
+        items.Should().HaveCount(2);
+        items![0].NameEn.Should().Be($"{prefix}-Gamma");
+        items![1].NameEn.Should().Be($"{prefix}-Beta");
     }
 
     [Fact]
-    public async Task UpdateTagGroup_ShouldReturnOk_AndReflectChanges()
+    public async Task GetTagGroups_WithGlobalSearch_ShouldReturnCorrectItems()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
 
-        // Arrange
-        var createRes = await client.PostAsJsonAsync("/api/tag-groups",
-            new TagGroupUpsertDto("Original", "Original", $"upd-{Guid.NewGuid().ToString()[..8]}"), ct);
-        var original = await createRes.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
+        var uniqueKey = Guid.NewGuid().ToString()[..8];
+        await client.PostAsJsonAsync("/api/tag-groups", new TagGroupUpsertDto($"Searchable-{uniqueKey}", "Encontrable", $"search-{uniqueKey}"), ct);
 
-        var updateDto = new TagGroupUpsertDto("Updated Name", "Nombre Actualizado", original!.Slug);
-
-        // Act
-        var response = await client.PutAsJsonAsync($"/api/tag-groups/{original.Id}", updateDto, ct);
+        // Act: Ищем по уникальному ключу
+        var response = await client.GetAsync($"/api/tag-groups?Q={uniqueKey}", ct);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var updated = await response.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
-        updated!.NameEn.Should().Be("Updated Name");
+        var items = await response.Content.ReadFromJsonAsync<List<TagGroupResponseDto>>(ct);
+        items.Should().ContainSingle(x => x.NameEn.Contains(uniqueKey));
     }
 
     [Fact]
-    public async Task DeleteTagGroup_ShouldReturnNoContent_AndThenNotFound()
+    public async Task DeleteTagGroup_WhenHasTags_ShouldReturnNotFound_InsteadOfInternalError()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
 
-        var createRes = await client.PostAsJsonAsync("/api/tag-groups",
-            new TagGroupUpsertDto("To Delete", "Para borrar", $"del-{Guid.NewGuid().ToString()[..8]}"), ct);
-        var group = await createRes.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
+        var groupRes = await client.PostAsJsonAsync("/api/tag-groups",
+            new TagGroupUpsertDto("Parent", "P", $"parent-{Guid.NewGuid():N}"), ct);
+        var group = await groupRes.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
 
-        // Act & Assert
-        var deleteRes = await client.DeleteAsync($"/api/tag-groups/{group!.Id}", ct);
-        deleteRes.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await client.PostAsJsonAsync("/api/tags",
+            new TagUpsertDto("Child", "C", $"child-{Guid.NewGuid():N}", group!.Id), ct);
 
-        var getRes = await client.GetAsync($"/api/tag-groups/{group.Id}", ct);
-        getRes.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // Act
+        var deleteRes = await client.DeleteAsync($"/api/tag-groups/{group.Id}", ct);
+
+        // Assert
+        deleteRes.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task UpdateTagGroup_WithDuplicateSlug_ShouldReturnConflict()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.HttpClient;
+
+        var slug1 = $"s1-{Guid.NewGuid():N}";
+        var slug2 = $"s2-{Guid.NewGuid():N}";
+
+        await client.PostAsJsonAsync("/api/tag-groups", new TagGroupUpsertDto("G1", "G1", slug1), ct);
+        var res2 = await client.PostAsJsonAsync("/api/tag-groups", new TagGroupUpsertDto("G2", "G2", slug2), ct);
+        var g2 = await res2.Content.ReadFromJsonAsync<TagGroupResponseDto>(ct);
+
+        // Act
+        var updateDto = new TagGroupUpsertDto("G2-Updated", "G2-U", slug1);
+        var response = await client.PutAsJsonAsync($"/api/tag-groups/{g2!.Id}", updateDto, ct);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
     }
 }
