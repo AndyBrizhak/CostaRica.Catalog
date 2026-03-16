@@ -1,7 +1,7 @@
 ﻿namespace CostaRica.Api.DTOs;
 
 /// <summary>
-/// DTO для возврата категории Google
+/// Результирующий DTO для отображения в списках и формах
 /// </summary>
 public record GoogleCategoryResponseDto(
     Guid Id,
@@ -10,7 +10,7 @@ public record GoogleCategoryResponseDto(
     string NameEs);
 
 /// <summary>
-/// DTO для создания или обновления категории
+/// DTO для создания и обновления (Upsert)
 /// </summary>
 public record GoogleCategoryUpsertDto(
     string Gcid,
