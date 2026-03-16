@@ -1,7 +1,21 @@
 ﻿namespace CostaRica.Api.DTOs;
 
 /// <summary>
-/// Объект ответа для медиа-ассета.
+/// Параметры запроса для списка медиа-файлов (стандарт React Admin)
+/// </summary>
+public record MediaQueryParameters(
+    int? _start = 0,
+    int? _end = 10,
+    string? _sort = "CreatedAt",
+    string? _order = "DESC",
+    string? q = null,
+    Guid[]? id = null,
+    Guid? businessId = null,
+    bool onlyOrphans = false
+);
+
+/// <summary>
+/// Объект ответа для медиа-ассета (плоская структура)
 /// </summary>
 public record MediaAssetResponseDto(
     Guid Id,
@@ -10,12 +24,12 @@ public record MediaAssetResponseDto(
     string ContentType,
     string? AltTextEn,
     string? AltTextEs,
+    string Url,
     DateTimeOffset CreatedAt,
-    // Список ID бизнесов, к которым привязан ассет (для инфо в админке)
     IEnumerable<Guid> RelatedBusinessIds);
 
 /// <summary>
-/// Объект для загрузки нового файла.
+/// Объект для загрузки нового файла
 /// </summary>
 public record MediaUploadDto(
     string Slug,
@@ -23,7 +37,7 @@ public record MediaUploadDto(
     string? AltTextEs);
 
 /// <summary>
-/// Объект для обновления метаданных ассета (SEO).
+/// Объект для обновления метаданных ассета
 /// </summary>
 public record MediaUpdateDto(
     string Slug,
@@ -31,16 +45,6 @@ public record MediaUpdateDto(
     string? AltTextEs);
 
 /// <summary>
-/// Фильтр для поиска медиа-ассетов.
+/// Результат операции удаления (Exception-free)
 /// </summary>
-public record MediaFilterDto(
-    Guid? BusinessId = null,
-    bool OnlyOrphans = false, // Только те, что не привязаны ни к одному бизнесу
-    string? SearchTerm = null); // Поиск по слагу или альтам
-
-/// <summary>
-/// Результат операции удаления (для реализации Exception-free).
-/// </summary>
-public record MediaDeleteResult(
-    bool Success,
-    string? ErrorMessage = null);
+public record MediaDeleteResult(bool Success, string? ErrorMessage = null);
