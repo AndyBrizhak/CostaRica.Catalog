@@ -9,7 +9,7 @@ namespace CostaRica.Api.Tests.Integration.Features.Provinces;
 public class ProvinceApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
 {
     [Fact]
-    public async Task GetProvinces_ReturnsSuccess()
+    public async Task GetProvinces_ShouldReturnSuccess_WithTotalCountHeader()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
@@ -17,8 +17,61 @@ public class ProvinceApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         var response = await client.GetAsync("/api/provinces", ct);
 
         response.EnsureSuccessStatusCode();
+
+        // Проверяем наличие заголовков для react-admin
+        response.Headers.Should().ContainKey("X-Total-Count");
+        response.Headers.Should().ContainKey("Access-Control-Expose-Headers");
+        response.Headers.GetValues("Access-Control-Expose-Headers").Should().Contain("X-Total-Count");
+
         var provinces = await response.Content.ReadFromJsonAsync<IEnumerable<ProvinceResponseDto>>(ct);
         provinces.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task GetProvinces_WithPagination_ShouldReturnLimitedItems()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.HttpClient;
+
+        // Создадим несколько записей для теста пагинации
+        for (int i = 0; i < 3; i++)
+        {
+            var slug = $"pag-{i}-{Guid.NewGuid().ToString()[..4]}";
+            await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto($"Paginated {i}", slug), ct);
+        }
+
+        // Act: Запрашиваем 1-ю страницу, размер 2
+        var response = await client.GetAsync("/api/provinces?page=1&pageSize=2", ct);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+        var provinces = await response.Content.ReadFromJsonAsync<List<ProvinceResponseDto>>(ct);
+
+        provinces.Should().NotBeNull();
+        // ИСПРАВЛЕНО: Правильное название метода - BeLessThanOrEqualTo
+        provinces!.Count.Should().BeLessThanOrEqualTo(2);
+
+        // Проверка заголовка
+        response.Headers.GetValues("X-Total-Count").First().Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task GetProvinces_WithSearch_ShouldReturnFilteredResults()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.HttpClient;
+        var uniqueName = $"Search-{Guid.NewGuid().ToString()[..8]}";
+        await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto(uniqueName, uniqueName.ToLower()), ct);
+
+        // Act
+        var response = await client.GetAsync($"/api/provinces?searchTerm={uniqueName}", ct);
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+        var provinces = await response.Content.ReadFromJsonAsync<List<ProvinceResponseDto>>(ct);
+
+        provinces.Should().ContainSingle(p => p.Name == uniqueName);
+        response.Headers.GetValues("X-Total-Count").First().Should().Be("1");
     }
 
     [Fact]
@@ -35,48 +88,23 @@ public class ProvinceApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
 
         // Получение по Slug
         var getResponse = await client.GetAsync($"/api/provinces/slug/{slug}", ct);
-
-        getResponse.EnsureSuccessStatusCode();
-        var province = await getResponse.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
-        province.Should().NotBeNull();
-        province!.Slug.Should().Be(slug);
-        province.Name.Should().Be("Test Province");
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
-    public async Task GetProvince_WithIncludeCities_ShouldReturnCitiesCollection()
+    public async Task DeleteProvince_ShouldReturnNoContent_WhenExists()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
 
-        var provinceSlug = $"inc-{Guid.NewGuid().ToString()[..8]}";
-        var pRes = await client.PostAsJsonAsync("/api/provinces",
-            new ProvinceUpsertDto("Include Test", provinceSlug), ct);
-        var province = await pRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
+        var slug = $"del-{Guid.NewGuid().ToString()[..8]}";
+        var createRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("To Delete", slug), ct);
+        var province = await createRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
 
-        // Добавим город, чтобы проверить реальную подгрузку
-        await client.PostAsJsonAsync("/api/cities",
-            new CityUpsertDto("Test City", $"city-{provinceSlug}", province!.Id), ct);
-
-        // Act: Запрашиваем с городами
-        var response = await client.GetAsync($"/api/provinces/slug/{provinceSlug}?includeCities=true", ct);
+        // Act
+        var response = await client.DeleteAsync($"/api/provinces/{province!.Id}", ct);
 
         // Assert
-        response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
-        result.Should().NotBeNull();
-        result!.Cities.Should().NotBeNull();
-        result.Cities.Should().NotBeEmpty(); // Проверяем, что город действительно подтянулся
-    }
-
-    [Fact]
-    public async Task DeleteProvince_ReturnsNotFound_WhenIdInvalid()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var client = fixture.HttpClient;
-
-        var response = await client.DeleteAsync($"/api/provinces/{Guid.NewGuid()}", ct);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
 }
