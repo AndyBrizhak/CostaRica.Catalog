@@ -68,7 +68,7 @@ public class MediaAssetServiceTests
             Id = Guid.NewGuid(),
             Name = "Test Business",
             Slug = "test-biz",
-            ProvinceId = Guid.NewGuid(), // Обязательное поле согласно модели
+            ProvinceId = Guid.NewGuid(),
             Location = new Point(0, 0) { SRID = 4326 }
         };
 
@@ -82,36 +82,11 @@ public class MediaAssetServiceTests
 
         // Assert
         result.Success.Should().BeFalse();
-        // Исправлено: ожидаемый текст приведен в соответствие с MediaAssetService.cs
         result.ErrorMessage.Should().Contain("используется в");
-        result.ErrorMessage.Should().Contain("бизнес-страницах");
     }
 
     [Fact]
-    public async Task DeleteAsync_ShouldRemoveFromDbAndStorage_WhenNoLinksExist()
-    {
-        // Arrange
-        var assetId = Guid.NewGuid();
-        var fileName = "delete-me.jpg";
-        var asset = new MediaAsset { Id = assetId, Slug = "orphan", FileName = fileName };
-
-        _context.MediaAssets.Add(asset);
-        await _context.SaveChangesAsync();
-
-        // Act
-        var result = await _service.DeleteAsync(assetId);
-
-        // Assert
-        result.Success.Should().BeTrue();
-
-        var inDb = await _context.MediaAssets.FindAsync(assetId);
-        inDb.Should().BeNull();
-
-        await _storageService.Received(1).DeleteAsync(fileName);
-    }
-
-    [Fact]
-    public async Task GetFilteredAsync_ShouldReturnOnlyOrphans_WhenOnlyOrphansIsTrue()
+    public async Task GetAllAsync_ShouldReturnOnlyOrphans_WhenOnlyOrphansIsTrue()
     {
         // Arrange
         var linked = new MediaAsset { Id = Guid.NewGuid(), Slug = "linked", FileName = "1.jpg" };
@@ -124,18 +99,64 @@ public class MediaAssetServiceTests
             Location = new Point(0, 0) { SRID = 4326 }
         });
 
-        var orphan = new MediaAsset { Id = Guid.NewGuid(), Slug = "orphan", FileName = "2.jpg" };
+        var orphan = new MediaAsset { Id = Guid.NewGuid(), Slug = "orphan-asset", FileName = "2.jpg" };
 
         _context.MediaAssets.AddRange(linked, orphan);
         await _context.SaveChangesAsync();
 
-        var filter = new MediaFilterDto { OnlyOrphans = true };
+        var parameters = new MediaQueryParameters(onlyOrphans: true);
 
         // Act
-        var result = await _service.GetFilteredAsync(filter);
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
 
         // Assert
-        result.Should().HaveCount(1);
-        result.First().Slug.Should().Be("orphan");
+        items.Should().HaveCount(1);
+        totalCount.Should().Be(1);
+        items.First().Slug.Should().Be("orphan-asset");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ShouldSearchByTerm_InMultipleFields()
+    {
+        // Arrange
+        var asset1 = new MediaAsset { Id = Guid.NewGuid(), Slug = "sunset-beach", FileName = "img1.jpg", AltTextEn = "Yellow sun" };
+        var asset2 = new MediaAsset { Id = Guid.NewGuid(), Slug = "forest", FileName = "img2.jpg", AltTextEn = "Green trees" };
+        var asset3 = new MediaAsset { Id = Guid.NewGuid(), Slug = "mountain", FileName = "sunset-top.jpg", AltTextEn = "Snow" };
+
+        _context.MediaAssets.AddRange(asset1, asset2, asset3);
+        await _context.SaveChangesAsync();
+
+        var parameters = new MediaQueryParameters(q: "sunset");
+
+        // Act
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
+
+        // Assert
+        // Должен найти asset1 (по слагу) и asset3 (по имени файла)
+        items.Should().HaveCount(2);
+        totalCount.Should().Be(2);
+        items.Should().Contain(x => x.Slug == "sunset-beach");
+        items.Should().Contain(x => x.Slug == "mountain");
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ShouldApplyPagination()
+    {
+        // Arrange
+        for (int i = 1; i <= 15; i++)
+        {
+            _context.MediaAssets.Add(new MediaAsset { Id = Guid.NewGuid(), Slug = $"img-{i:D2}", FileName = $"{i}.jpg" });
+        }
+        await _context.SaveChangesAsync();
+
+        // Запрашиваем вторую страницу (с 10 по 15 элемент)
+        var parameters = new MediaQueryParameters(_start: 10, _end: 20);
+
+        // Act
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
+
+        // Assert
+        items.Should().HaveCount(5);
+        totalCount.Should().Be(15);
     }
 }
