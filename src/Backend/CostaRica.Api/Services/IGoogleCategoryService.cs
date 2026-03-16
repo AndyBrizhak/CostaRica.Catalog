@@ -4,21 +4,16 @@ namespace CostaRica.Api.Services;
 
 public interface IGoogleCategoryService
 {
-    Task<GoogleCategoryResponseDto?> GetByIdAsync(Guid id);
-    Task<GoogleCategoryResponseDto?> GetByGcidAsync(string gcid);
+    Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> GetAllAsync(
+        GoogleCategoryQueryParameters parameters,
+        CancellationToken ct = default);
 
-    Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> SearchAsync(
-        string? searchTerm,
-        int page = 1,
-        int pageSize = 20,
-        string? sortBy = "NameEn",
-        bool isAscending = true);
+    Task<GoogleCategoryResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default);
+    Task<GoogleCategoryResponseDto?> GetByGcidAsync(string gcid, CancellationToken ct = default);
 
-    Task<GoogleCategoryResponseDto?> CreateAsync(GoogleCategoryUpsertDto dto);
+    Task<GoogleCategoryResponseDto?> CreateAsync(GoogleCategoryUpsertDto dto, CancellationToken ct = default);
+    Task<int> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories, CancellationToken ct = default);
 
-    // МАССОВЫЙ ИМПОРТ
-    Task<int> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories);
-
-    Task<bool> UpdateAsync(Guid id, GoogleCategoryUpsertDto dto);
-    Task<bool> DeleteAsync(Guid id);
+    Task<bool> UpdateAsync(Guid id, GoogleCategoryUpsertDto dto, CancellationToken ct = default);
+    Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
 }
