@@ -9,47 +9,82 @@ namespace CostaRica.Api.Tests.Integration.Features.Cities;
 public class CityApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
 {
     [Fact]
-    public async Task CreateCity_ShouldReturnCreated_WhenProvinceExists()
+    public async Task CreateCity_ShouldReturnFlatDtoWithProvinceName()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
 
+        // 1. Создаем провинцию
         var pSlug = $"prov-{Guid.NewGuid().ToString()[..8]}";
         var pRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("Test Prov", pSlug), ct);
         var province = await pRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
 
+        // 2. Создаем город
         var citySlug = $"city-{Guid.NewGuid().ToString()[..8]}";
         var cityDto = new CityUpsertDto("Test City", citySlug, province!.Id);
-
         var response = await client.PostAsJsonAsync("/api/cities", cityDto, ct);
 
+        // Assert
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         var createdCity = await response.Content.ReadFromJsonAsync<CityResponseDto>(ct);
-        createdCity!.Name.Should().Be("Test City");
+
+        createdCity.Should().NotBeNull();
+        createdCity!.ProvinceName.Should().Be("Test Prov"); // Проверка плоского DTO
         createdCity.ProvinceId.Should().Be(province.Id);
     }
 
     [Fact]
-    public async Task GetCitiesByProvince_ShouldReturnCorrectCities()
+    public async Task GetAll_WithPagination_ShouldReturnCorrectItemsAndHeaders()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
-        var pSlug = $"filter-{Guid.NewGuid().ToString()[..8]}";
 
-        var pRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("Filter Prov", pSlug), ct);
+        // Arrange: Создаем провинцию и 5 городов в ней
+        var pSlug = $"pag-{Guid.NewGuid().ToString()[..8]}";
+        var pRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("Pag Prov", pSlug), ct);
         var province = await pRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
 
-        var c1Res = await client.PostAsJsonAsync("/api/cities", new CityUpsertDto("City 1", $"c1-{pSlug}", province!.Id), ct);
-        c1Res.EnsureSuccessStatusCode();
+        for (int i = 1; i <= 5; i++)
+        {
+            await client.PostAsJsonAsync("/api/cities", new CityUpsertDto($"City {i}", $"c{i}-{pSlug}", province!.Id), ct);
+        }
 
-        var c2Res = await client.PostAsJsonAsync("/api/cities", new CityUpsertDto("City 2", $"c2-{pSlug}", province!.Id), ct);
-        c2Res.EnsureSuccessStatusCode();
+        // Act: Запрашиваем только первые 2 города этой провинции
+        var response = await client.GetAsync($"/api/cities?ProvinceId={province.Id}&_start=0&_end=2", ct);
 
-        var response = await client.GetAsync($"/api/cities/province/{pSlug}", ct);
-
+        // Assert
         response.EnsureSuccessStatusCode();
-        var cities = await response.Content.ReadFromJsonAsync<IEnumerable<CityResponseDto>>(ct);
-        cities.Should().HaveCount(2);
+
+        // Проверка заголовков для react-admin
+        response.Headers.Contains("X-Total-Count").Should().BeTrue();
+        response.Headers.GetValues("X-Total-Count").First().Should().Be("5");
+        response.Headers.GetValues("Access-Control-Expose-Headers").First().Should().Contain("X-Total-Count");
+
+        // Проверка контента
+        var items = await response.Content.ReadFromJsonAsync<IEnumerable<CityResponseDto>>(ct);
+        items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task GetAll_WithSorting_ShouldReturnOrderedList()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.HttpClient;
+
+        var pSlug = $"sort-{Guid.NewGuid().ToString()[..8]}";
+        var pRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("Sort Prov", pSlug), ct);
+        var province = await pRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
+
+        await client.PostAsJsonAsync("/api/cities", new CityUpsertDto("A-City", $"a-{pSlug}", province!.Id), ct);
+        await client.PostAsJsonAsync("/api/cities", new CityUpsertDto("Z-City", $"z-{pSlug}", province!.Id), ct);
+
+        // Act: Сортировка по имени убыванию
+        var response = await client.GetAsync($"/api/cities?ProvinceId={province.Id}&_sort=Name&_order=DESC", ct);
+
+        // Assert
+        var items = await response.Content.ReadFromJsonAsync<List<CityResponseDto>>(ct);
+        items![0].Name.Should().Be("Z-City");
+        items[1].Name.Should().Be("A-City");
     }
 
     [Fact]
@@ -58,22 +93,16 @@ public class CityApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
 
-        // 1. Создаем уникальную провинцию
-        var pSlug = $"restrict-{Guid.NewGuid().ToString()[..8]}";
-        var pRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("Restrict Prov", pSlug), ct);
-        pRes.EnsureSuccessStatusCode();
+        var pSlug = $"restr-{Guid.NewGuid().ToString()[..8]}";
+        var pRes = await client.PostAsJsonAsync("/api/provinces", new ProvinceUpsertDto("Restrict", pSlug), ct);
         var province = await pRes.Content.ReadFromJsonAsync<ProvinceResponseDto>(ct);
 
-        // 2. Создаем уникальный город в этой провинции
-        var citySlug = $"sticky-{Guid.NewGuid().ToString()[..8]}";
-        var cRes = await client.PostAsJsonAsync("/api/cities", new CityUpsertDto("Sticky City", citySlug, province!.Id), ct);
-        cRes.EnsureSuccessStatusCode(); // КРИТИЧНО: если город не создастся, тест упадет здесь
+        await client.PostAsJsonAsync("/api/cities", new CityUpsertDto("Stay", $"stay-{pSlug}", province!.Id), ct);
 
-        // 3. Пытаемся удалить провинцию
+        // Act: Пытаемся удалить провинцию
         var response = await client.DeleteAsync($"/api/provinces/{province.Id}", ct);
 
-        // Assert
-        // Теперь мы точно знаем, что в провинции есть город, и БД должна запретить удаление
+        // Assert: Ожидаем ошибку из-за DeleteBehavior.Restrict
         ((int)response.StatusCode).Should().BeGreaterThanOrEqualTo(400);
     }
 }
