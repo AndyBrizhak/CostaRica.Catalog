@@ -1,5 +1,6 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -10,10 +11,17 @@ public static class CitiesEndpoints
         var group = routes.MapGroup("/api/cities").WithTags("Cities");
 
         // GET /api/cities
-        group.MapGet("/", async (ICityService service) =>
+        // Поддержка пагинации, фильтрации и заголовка X-Total-Count
+        group.MapGet("/", async ([AsParameters] CityQueryParameters @params, ICityService service, HttpContext context) =>
         {
-            var cities = await service.GetAllAsync();
-            return Results.Ok(cities);
+            var (items, totalCount) = await service.GetAllAsync(@params);
+
+            // Добавляем заголовок для react-admin
+            context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
+            // Разрешаем фронтенду читать этот заголовок (CORS)
+            context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
+
+            return Results.Ok(items);
         })
         .WithName("GetCities");
 
@@ -25,15 +33,6 @@ public static class CitiesEndpoints
         })
         .WithName("GetCityById");
 
-        // GET /api/cities/province/{slug}
-        // Специальный метод для фильтрации городов по провинции
-        group.MapGet("/province/{slug}", async (string slug, ICityService service) =>
-        {
-            var cities = await service.GetByProvinceAsync(slug);
-            return Results.Ok(cities);
-        })
-        .WithName("GetCitiesByProvince");
-
         // POST /api/cities
         group.MapPost("/", async (CityUpsertDto dto, ICityService service) =>
         {
@@ -43,7 +42,7 @@ public static class CitiesEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = "Не удалось создать город. Проверьте, существует ли ProvinceId и уникален ли Slug."
+                    error = "Не удалось создать город. Проверьте уникальность Slug и существование ProvinceId."
                 });
             }
 
@@ -60,7 +59,7 @@ public static class CitiesEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = "Обновление не удалось. Возможно, город не найден, провинция не существует или Slug уже занят."
+                    error = "Обновление не удалось. Возможно, город не найден или Slug уже занят."
                 });
             }
 
