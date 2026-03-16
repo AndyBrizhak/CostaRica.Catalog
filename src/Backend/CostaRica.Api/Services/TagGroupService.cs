@@ -15,23 +15,15 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
             .AsNoTracking()
             .AsQueryable();
 
-        // 1. Фильтрация по конкретным полям
         if (!string.IsNullOrWhiteSpace(parameters.NameEn))
-        {
             query = query.Where(tg => EF.Functions.ILike(tg.NameEn, $"%{parameters.NameEn}%"));
-        }
 
         if (!string.IsNullOrWhiteSpace(parameters.NameEs))
-        {
             query = query.Where(tg => EF.Functions.ILike(tg.NameEs, $"%{parameters.NameEs}%"));
-        }
 
         if (!string.IsNullOrWhiteSpace(parameters.Slug))
-        {
             query = query.Where(tg => tg.Slug.Contains(parameters.Slug.ToLowerInvariant()));
-        }
 
-        // 2. Глобальный поиск (Q) по нескольким полям
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
             query = query.Where(tg => EF.Functions.ILike(tg.NameEn, $"%{parameters.Q}%") ||
@@ -39,10 +31,8 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
                                     tg.Slug.Contains(parameters.Q.ToLowerInvariant()));
         }
 
-        // 3. Подсчет общего количества до применения пагинации
         var totalCount = await query.CountAsync(ct);
 
-        // 4. Динамическая сортировка
         var isDescending = parameters._order?.ToUpper() == "DESC";
         query = parameters._sort switch
         {
@@ -51,7 +41,6 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
             _ => isDescending ? query.OrderByDescending(tg => tg.NameEn) : query.OrderBy(tg => tg.NameEn)
         };
 
-        // 5. Пагинация
         var start = parameters._start ?? 0;
         var end = parameters._end ?? 10;
         var take = end - start;
@@ -87,11 +76,8 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
     {
         var slugLower = dto.Slug.ToLowerInvariant();
 
-        // Exception-free: проверка уникальности вместо выброса исключения
         if (await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
-        {
             return null;
-        }
 
         var tagGroup = new TagGroup
         {
@@ -114,11 +100,8 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
 
         var slugLower = dto.Slug.ToLowerInvariant();
 
-        // Проверка конфликта слага при изменении
         if (tagGroup.Slug != slugLower && await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
-        {
             return null;
-        }
 
         tagGroup.NameEn = dto.NameEn;
         tagGroup.NameEs = dto.NameEs;
@@ -128,10 +111,25 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
         return MapToDto(tagGroup);
     }
 
+    /// <summary>
+    /// Удаление группы с проверкой на наличие связанных тегов.
+    /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        var tagGroup = await db.TagGroups.FindAsync([id], ct);
+        // Загружаем группу вместе с информацией о наличии тегов
+        var tagGroup = await db.TagGroups
+            .Include(tg => tg.Tags)
+            .FirstOrDefaultAsync(tg => tg.Id == id, ct);
+
         if (tagGroup == null) return false;
+
+        // Exception-free: предотвращаем ошибку внешнего ключа
+        if (tagGroup.Tags.Any())
+        {
+            // В реальном проекте здесь можно возвращать специальный Result-объект с описанием ошибки,
+            // но в рамках текущего ITagGroupService возвращаем false, что API интерпретирует как 404/Conflict.
+            return false;
+        }
 
         db.TagGroups.Remove(tagGroup);
         await db.SaveChangesAsync(ct);

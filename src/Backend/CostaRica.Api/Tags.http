@@ -1,6 +1,10 @@
 ﻿@api_HostAddress = http://localhost:5046
 
-# 1. Создание группы тегов
+# ==========================================
+# ГРУППЫ ТЕГОВ (Tag Groups)
+# ==========================================
+
+### 1. Создание группы тегов (Amenities)
 # @name createGroup
 POST {{api_HostAddress}}/api/tag-groups
 Content-Type: application/json
@@ -8,20 +12,34 @@ Content-Type: application/json
 {
   "nameEn": "Amenities",
   "nameEs": "Comodidades",
-  "slug": "amenities"
+  "slug": "amenities-{{$guid}}"
 }
 
 ###
 
-# 2. Получение группы по слагу (чтобы достать ID, если POST выше вернул 409)
-# @name getGroup
-GET {{api_HostAddress}}/api/tag-groups/slug/amenities
+@groupId = {{createGroup.response.body.$.id}}
+
+### 2. Получение списка групп (Пагинация и Сортировка)
+# Проверяем заголовки X-Total-Count в ответе
+GET {{api_HostAddress}}/api/tag-groups?_start=0&_end=5&_sort=NameEn&_order=ASC
 
 ###
 
-@groupId = {{getGroup.response.body.$.id}}
+### 3. Глобальный поиск по группам (параметр Q)
+GET {{api_HostAddress}}/api/tag-groups?Q=amen
 
-# 3. Создание тега (WiFi)
+###
+
+### 4. Получение группы по ID
+GET {{api_HostAddress}}/api/tag-groups/{{groupId}}
+
+###
+
+# ==========================================
+# ТЕГИ (Tags)
+# ==========================================
+
+### 5. Создание тега (WiFi) в созданной группе
 # @name createTag
 POST {{api_HostAddress}}/api/tags
 Content-Type: application/json
@@ -29,54 +47,62 @@ Content-Type: application/json
 {
   "nameEn": "Free WiFi",
   "nameEs": "WiFi gratis",
-  "slug": "free-wifi",
+  "slug": "free-wifi-{{$guid}}",
   "tagGroupId": "{{groupId}}"
 }
-
-###
-
-# 4. Попытка создания дубликата тега (ожидается 409 Conflict)
-POST {{api_HostAddress}}/api/tags
-Content-Type: application/json
-
-{
-  "nameEn": "Free WiFi Duplicate",
-  "nameEs": "WiFi duplicado",
-  "slug": "free-wifi",
-  "tagGroupId": "{{groupId}}"
-}
-
-###
-
-# 5. Получение всех тегов
-GET {{api_HostAddress}}/api/tags
-
-###
-
-# 6. Получение тегов конкретной группы
-GET {{api_HostAddress}}/api/tags/group/{{groupId}}
 
 ###
 
 @tagId = {{createTag.response.body.$.id}}
 
-# 7. Обновление тега
-PUT {{api_HostAddress}}/api/tags/{{tagId}}
+### 6. Получение всех тегов (Пагинация)
+GET {{api_HostAddress}}/api/tags?_start=0&_end=10&_sort=Slug&_order=DESC
+
+###
+
+### 7. Фильтрация тегов по родительской группе (важно для React Admin)
+GET {{api_HostAddress}}/api/tags?TagGroupId={{groupId}}
+
+###
+
+### 8. Глобальный поиск по тегам
+GET {{api_HostAddress}}/api/tags?Q=wifi
+
+###
+
+### 9. Попытка создания дубликата тега (ожидается 409 Conflict)
+POST {{api_HostAddress}}/api/tags
 Content-Type: application/json
 
 {
-  "nameEn": "High Speed WiFi",
-  "nameEs": "WiFi de alta velocidad",
-  "slug": "high-speed-wifi",
+  "nameEn": "Duplicate Tag",
+  "nameEs": "Tag duplicado",
+  "slug": "free-wifi", 
   "tagGroupId": "{{groupId}}"
 }
 
 ###
 
-# 8. Удаление тега
+# ==========================================
+# ОБНОВЛЕНИЕ И УДАЛЕНИЕ
+# ==========================================
+
+### 10. Обновление группы
+PUT {{api_HostAddress}}/api/tag-groups/{{groupId}}
+Content-Type: application/json
+
+{
+  "nameEn": "Updated Amenities",
+  "nameEs": "Comodidades Actualizadas",
+  "slug": "amenities-updated"
+}
+
+###
+
+### 11. Удаление тега
 DELETE {{api_HostAddress}}/api/tags/{{tagId}}
 
 ###
 
-# 9. Удаление группы тегов
+### 12. Удаление группы
 DELETE {{api_HostAddress}}/api/tag-groups/{{groupId}}
