@@ -13,6 +13,7 @@ public class TagServiceTests
 
     public TagServiceTests()
     {
+        // Изоляция базы данных для каждого теста
         var options = new DbContextOptionsBuilder<DirectoryDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
@@ -30,26 +31,56 @@ public class TagServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldReturnTag_WhenGroupExistsAndDataIsValid()
+    public async Task GetAllAsync_ShouldFilterByTagGroupId()
     {
         // Arrange
-        var group = await SeedGroupAsync();
-        var dto = new TagUpsertDto("WiFi", "WiFi", "wifi", group.Id);
+        var group1 = await SeedGroupAsync("Group 1", "g1");
+        var group2 = await SeedGroupAsync("Group 2", "g2");
+
+        _context.Tags.AddRange(
+            new Tag { Id = Guid.NewGuid(), NameEn = "Tag 1", NameEs = "T1", Slug = "t1", TagGroupId = group1.Id },
+            new Tag { Id = Guid.NewGuid(), NameEn = "Tag 2", NameEs = "T2", Slug = "t2", TagGroupId = group1.Id },
+            new Tag { Id = Guid.NewGuid(), NameEn = "Tag 3", NameEs = "T3", Slug = "t3", TagGroupId = group2.Id }
+        );
+        await _context.SaveChangesAsync();
+
+        var parameters = new TagQueryParameters(TagGroupId: group1.Id);
 
         // Act
-        var result = await _service.CreateAsync(dto);
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.Slug.Should().Be("wifi");
-        result.TagGroupId.Should().Be(group.Id);
+        totalCount.Should().Be(2);
+        items.Should().HaveCount(2);
+        items.Should().AllSatisfy(t => t.TagGroupId.Should().Be(group1.Id));
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldReturnNull_WhenGroupDoesNotExist()
+    public async Task GetAllAsync_WithGlobalSearch_ShouldFindTagsAcrossFields()
     {
         // Arrange
-        var dto = new TagUpsertDto("WiFi", "WiFi", "wifi", Guid.NewGuid()); // Несуществующий ID
+        var group = await SeedGroupAsync();
+        _context.Tags.AddRange(
+            new Tag { Id = Guid.NewGuid(), NameEn = "Free WiFi", NameEs = "WiFi gratis", Slug = "wifi", TagGroupId = group.Id },
+            new Tag { Id = Guid.NewGuid(), NameEn = "Parking", NameEs = "Parqueo", Slug = "parking", TagGroupId = group.Id }
+        );
+        await _context.SaveChangesAsync();
+
+        var parameters = new TagQueryParameters(Q: "gratis"); // Поиск по испанскому полю
+
+        // Act
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
+
+        // Assert
+        totalCount.Should().Be(1);
+        items.Should().ContainSingle(t => t.Slug == "wifi");
+    }
+
+    [Fact]
+    public async Task CreateAsync_ShouldReturnNull_WhenTagGroupDoesNotExist()
+    {
+        // Arrange
+        var dto = new TagUpsertDto("Test", "Test", "test", Guid.NewGuid()); // Несуществующий ID группы
 
         // Act
         var result = await _service.CreateAsync(dto);
@@ -63,10 +94,10 @@ public class TagServiceTests
     {
         // Arrange
         var group = await SeedGroupAsync();
-        _context.Tags.Add(new Tag { Id = Guid.NewGuid(), NameEn = "Old", NameEs = "O", Slug = "dup", TagGroupId = group.Id });
+        _context.Tags.Add(new Tag { Id = Guid.NewGuid(), NameEn = "Old", NameEs = "O", Slug = "existing-tag", TagGroupId = group.Id });
         await _context.SaveChangesAsync();
 
-        var dto = new TagUpsertDto("New", "N", "dup", group.Id);
+        var dto = new TagUpsertDto("New", "N", "EXISTING-TAG", group.Id);
 
         // Act
         var result = await _service.CreateAsync(dto);
@@ -76,55 +107,43 @@ public class TagServiceTests
     }
 
     [Fact]
-    public async Task GetByGroupIdAsync_ShouldReturnOnlyRelevantTags()
-    {
-        // Arrange
-        var g1 = await SeedGroupAsync("G1", "g1");
-        var g2 = await SeedGroupAsync("G2", "g2");
-
-        _context.Tags.Add(new Tag { Id = Guid.NewGuid(), NameEn = "T1", Slug = "t1", TagGroupId = g1.Id });
-        _context.Tags.Add(new Tag { Id = Guid.NewGuid(), NameEn = "T2", Slug = "t2", TagGroupId = g2.Id });
-        await _context.SaveChangesAsync();
-
-        // Act
-        var result = await _service.GetByGroupIdAsync(g1.Id);
-
-        // Assert
-        result.Should().HaveCount(1);
-        result.First().Slug.Should().Be("t1");
-    }
-
-    [Fact]
-    public async Task UpdateAsync_ShouldReturnNull_WhenMovingToNonExistentGroup()
+    public async Task UpdateAsync_ShouldPreventDuplicateSlugsOnOtherTags()
     {
         // Arrange
         var group = await SeedGroupAsync();
-        var tag = new Tag { Id = Guid.NewGuid(), NameEn = "T", Slug = "t", TagGroupId = group.Id };
-        _context.Tags.Add(tag);
+        var tag1 = new Tag { Id = Guid.NewGuid(), NameEn = "T1", NameEs = "T1", Slug = "slug1", TagGroupId = group.Id };
+        var tag2 = new Tag { Id = Guid.NewGuid(), NameEn = "T2", NameEs = "T2", Slug = "slug2", TagGroupId = group.Id };
+        _context.Tags.AddRange(tag1, tag2);
         await _context.SaveChangesAsync();
 
-        var updateDto = new TagUpsertDto("T", "T", "t", Guid.NewGuid()); // Смена на битый ID группы
+        var updateDto = new TagUpsertDto("Updated", "U", "slug2", group.Id); // Пытаемся занять слаг второго тега
 
         // Act
-        var result = await _service.UpdateAsync(tag.Id, updateDto);
+        var result = await _service.UpdateAsync(tag1.Id, updateDto);
 
         // Assert
         result.Should().BeNull();
     }
 
     [Fact]
-    public async Task GetBySlugAsync_ShouldBeCaseInsensitive()
+    public async Task GetAllAsync_ShouldApplyPaginationCorrectly()
     {
         // Arrange
         var group = await SeedGroupAsync();
-        _context.Tags.Add(new Tag { Id = Guid.NewGuid(), NameEn = "WiFi", Slug = "wifi-spot", TagGroupId = group.Id });
+        for (int i = 1; i <= 5; i++)
+        {
+            _context.Tags.Add(new Tag { Id = Guid.NewGuid(), NameEn = $"Tag {i}", NameEs = $"T{i}", Slug = $"t{i}", TagGroupId = group.Id });
+        }
         await _context.SaveChangesAsync();
 
+        // Просим 2 элемента, пропуская первый
+        var parameters = new TagQueryParameters(_start: 1, _end: 3);
+
         // Act
-        var result = await _service.GetBySlugAsync("WIFI-SPOT");
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.Slug.Should().Be("wifi-spot");
+        totalCount.Should().Be(5);
+        items.Should().HaveCount(2);
     }
 }
