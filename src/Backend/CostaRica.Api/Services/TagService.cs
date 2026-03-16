@@ -4,23 +4,72 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CostaRica.Api.Services;
 
+/// <summary>
+/// Реализация сервиса управления тегами (стандарт react-admin).
+/// </summary>
 public class TagService(DirectoryDbContext db) : ITagService
 {
-    public async Task<IEnumerable<TagResponseDto>> GetAllAsync(CancellationToken ct = default)
+    public async Task<(IEnumerable<TagResponseDto> Items, int TotalCount)> GetAllAsync(TagQueryParameters parameters, CancellationToken ct = default)
     {
-        return await db.Tags
+        var query = db.Tags
             .AsNoTracking()
-            .Select(t => MapToDto(t))
-            .ToListAsync(ct);
-    }
+            .AsQueryable();
 
-    public async Task<IEnumerable<TagResponseDto>> GetByGroupIdAsync(Guid groupId, CancellationToken ct = default)
-    {
-        return await db.Tags
-            .AsNoTracking()
-            .Where(t => t.TagGroupId == groupId)
+        // 1. Фильтрация по родительской группе (важно для react-admin ReferenceInput)
+        if (parameters.TagGroupId.HasValue)
+        {
+            query = query.Where(t => t.TagGroupId == parameters.TagGroupId.Value);
+        }
+
+        // 2. Фильтрация по конкретным полям
+        if (!string.IsNullOrWhiteSpace(parameters.NameEn))
+        {
+            query = query.Where(t => EF.Functions.ILike(t.NameEn, $"%{parameters.NameEn}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.NameEs))
+        {
+            query = query.Where(t => EF.Functions.ILike(t.NameEs, $"%{parameters.NameEs}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Slug))
+        {
+            query = query.Where(t => t.Slug.Contains(parameters.Slug.ToLowerInvariant()));
+        }
+
+        // 3. Глобальный поиск (Q)
+        if (!string.IsNullOrWhiteSpace(parameters.Q))
+        {
+            query = query.Where(t => EF.Functions.ILike(t.NameEn, $"%{parameters.Q}%") ||
+                                    EF.Functions.ILike(t.NameEs, $"%{parameters.Q}%") ||
+                                    t.Slug.Contains(parameters.Q.ToLowerInvariant()));
+        }
+
+        // 4. Подсчет общего количества до пагинации
+        var totalCount = await query.CountAsync(ct);
+
+        // 5. Динамическая сортировка
+        var isDescending = parameters._order?.ToUpper() == "DESC";
+        query = parameters._sort switch
+        {
+            "NameEs" => isDescending ? query.OrderByDescending(t => t.NameEs) : query.OrderBy(t => t.NameEs),
+            "Slug" => isDescending ? query.OrderByDescending(t => t.Slug) : query.OrderBy(t => t.Slug),
+            "TagGroupId" => isDescending ? query.OrderByDescending(t => t.TagGroupId) : query.OrderBy(t => t.TagGroupId),
+            _ => isDescending ? query.OrderByDescending(t => t.NameEn) : query.OrderBy(t => t.NameEn)
+        };
+
+        // 6. Пагинация
+        var start = parameters._start ?? 0;
+        var end = parameters._end ?? 10;
+        var take = end - start;
+
+        var items = await query
+            .Skip(start)
+            .Take(take > 0 ? take : 10)
             .Select(t => MapToDto(t))
             .ToListAsync(ct);
+
+        return (items, totalCount);
     }
 
     public async Task<TagResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -43,13 +92,12 @@ public class TagService(DirectoryDbContext db) : ITagService
 
     public async Task<TagResponseDto?> CreateAsync(TagUpsertDto dto, CancellationToken ct = default)
     {
-        var slugLower = dto.Slug.ToLowerInvariant();
-
-        // 1. Проверяем существование группы
+        // 1. Проверка наличия родительской группы
         var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
         if (!groupExists) return null;
 
-        // 2. Проверяем уникальность слага
+        // 2. Проверка уникальности слага
+        var slugLower = dto.Slug.ToLowerInvariant();
         if (await db.Tags.AnyAsync(t => t.Slug == slugLower, ct)) return null;
 
         var tag = new Tag
@@ -72,16 +120,15 @@ public class TagService(DirectoryDbContext db) : ITagService
         var tag = await db.Tags.FindAsync([id], ct);
         if (tag == null) return null;
 
-        var slugLower = dto.Slug.ToLowerInvariant();
-
-        // 1. Если группа меняется, проверяем её наличие
+        // 1. Проверка наличия родительской группы (если она изменилась)
         if (tag.TagGroupId != dto.TagGroupId)
         {
             var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
             if (!groupExists) return null;
         }
 
-        // 2. Если слаг меняется, проверяем уникальность
+        // 2. Проверка уникальности слага
+        var slugLower = dto.Slug.ToLowerInvariant();
         if (tag.Slug != slugLower && await db.Tags.AnyAsync(t => t.Slug == slugLower, ct))
         {
             return null;
