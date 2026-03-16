@@ -11,7 +11,27 @@ public static class MediaEndpoints
     {
         var group = routes.MapGroup("/media").WithTags("Media");
 
-        // 1. SEO-эндпоинт для выдачи изображений с поддержкой 301 редиректа
+        // 1. Получение списка медиа-файлов (React Admin Ready)
+        group.MapGet("/", async Task<IResult> ([AsParameters] MediaQueryParameters @params, [FromServices] IMediaAssetService service, HttpContext context) =>
+        {
+            var (items, totalCount) = await service.GetAllAsync(@params);
+
+            context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
+            context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
+
+            return Results.Ok(items);
+        })
+        .WithName("GetMediaList");
+
+        // 2. Получение одного ассета по ID
+        group.MapGet("/{id:guid}", async Task<IResult> (Guid id, [FromServices] IMediaAssetService service) =>
+        {
+            var result = await service.GetByIdAsync(id);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        })
+        .WithName("GetMediaById");
+
+        // 3. SEO-эндпоинт для выдачи физических файлов
         group.MapGet("/{id:guid}/{slug}", async Task<IResult> (
             Guid id,
             string slug,
@@ -23,47 +43,33 @@ public static class MediaEndpoints
 
             if (asset == null) return Results.NotFound();
 
-            // Проверка актуальности слага для SEO. Если не совпадает — редирект на правильный URL.
             if (asset.Slug != slug)
             {
                 var newUrl = $"/media/{id}/{asset.Slug}{context.Request.QueryString}";
                 return Results.Redirect(newUrl, permanent: true);
             }
 
-            // Получаем путь к хранилищу из конфигурации (по умолчанию "media")
             var storagePath = config["Storage:LocalPath"] ?? "media";
+            var filePath = Path.GetFullPath(Path.Combine(storagePath, asset.FileName));
 
-            // Формируем полный физический путь к файлу относительно рабочей директории
-            var filePath = Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), storagePath, asset.FileName));
-
-            if (!System.IO.File.Exists(filePath))
+            if (!File.Exists(filePath))
             {
-                return Results.NotFound("Файл физически не найден в папке хранилища.");
+                return Results.NotFound("Файл физически отсутствует в хранилище");
             }
 
-            // Возвращаем файл напрямую с корректным MIME-типом
+            // ИСПРАВЛЕНО: В Minimal APIs используется Results.File вместо Results.PhysicalFile
             return Results.File(filePath, asset.ContentType);
         })
-        .WithName("GetMediaFile");
+        .WithName("ServeMediaFile");
 
-        // 2. Получение списка с фильтрацией (параметры передаются в строке запроса)
-        group.MapGet("/", async ([AsParameters] MediaFilterDto filter, [FromServices] IMediaAssetService service) =>
-        {
-            return Results.Ok(await service.GetFilteredAsync(filter));
-        })
-        .WithName("GetMediaList");
-
-        // 3. Загрузка нового файла (через форму для Scalar UI)
+        // 4. Загрузка нового изображения
         group.MapPost("/upload", async Task<IResult> (
-            [FromForm] IFormFile file,
+            IFormFile file,
             [FromForm] string slug,
             [FromForm] string? altTextEn,
             [FromForm] string? altTextEs,
             [FromServices] IMediaAssetService service) =>
         {
-            if (file == null || file.Length == 0)
-                return Results.BadRequest("Файл не выбран");
-
             if (string.IsNullOrWhiteSpace(slug))
                 return Results.BadRequest("Slug обязателен");
 
@@ -77,26 +83,23 @@ public static class MediaEndpoints
                 : Results.BadRequest("Ошибка загрузки (возможно, этот слаг уже используется)");
         })
         .DisableAntiforgery()
-        .WithOpenApi(operation =>
-        {
-            operation.Summary = "Загрузить новое изображение";
-            return operation;
-        })
         .WithName("UploadMedia");
 
-        // 4. Обновление метаданных ассета
-        group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, [FromServices] IMediaAssetService service) =>
+        // 5. Обновление метаданных ассета
+        group.MapPut("/{id:guid}", async Task<IResult> (Guid id, MediaUpdateDto dto, [FromServices] IMediaAssetService service) =>
         {
             var result = await service.UpdateMetadataAsync(id, dto);
             return result != null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("UpdateMediaMetadata");
 
-        // 5. Удаление ассета
-        group.MapDelete("/{id:guid}", async (Guid id, [FromServices] IMediaAssetService service) =>
+        // 6. Удаление ассета
+        group.MapDelete("/{id:guid}", async Task<IResult> (Guid id, [FromServices] IMediaAssetService service) =>
         {
             var result = await service.DeleteAsync(id);
-            return result.Success ? Results.NoContent() : Results.BadRequest(result.ErrorMessage);
+            return result.Success
+                ? Results.NoContent()
+                : Results.BadRequest(new { message = result.ErrorMessage });
         })
         .WithName("DeleteMedia");
     }
