@@ -15,34 +15,38 @@ public class TagService(DirectoryDbContext db) : ITagService
             .AsNoTracking()
             .AsQueryable();
 
-        // 1. Фильтрация по родительской группе (важно для react-admin ReferenceInput)
+        // 1. Фильтрация по родительской группе
         if (parameters.TagGroupId.HasValue)
         {
             query = query.Where(t => t.TagGroupId == parameters.TagGroupId.Value);
         }
 
-        // 2. Фильтрация по конкретным полям
+        // 2. Фильтрация по конкретным полям (универсальный поиск)
         if (!string.IsNullOrWhiteSpace(parameters.NameEn))
         {
-            query = query.Where(t => EF.Functions.ILike(t.NameEn, $"%{parameters.NameEn}%"));
+            var filter = parameters.NameEn.ToLower();
+            query = query.Where(t => t.NameEn.ToLower().Contains(filter));
         }
 
         if (!string.IsNullOrWhiteSpace(parameters.NameEs))
         {
-            query = query.Where(t => EF.Functions.ILike(t.NameEs, $"%{parameters.NameEs}%"));
+            var filter = parameters.NameEs.ToLower();
+            query = query.Where(t => t.NameEs.ToLower().Contains(filter));
         }
 
         if (!string.IsNullOrWhiteSpace(parameters.Slug))
         {
-            query = query.Where(t => t.Slug.Contains(parameters.Slug.ToLowerInvariant()));
+            var filter = parameters.Slug.ToLower();
+            query = query.Where(t => t.Slug.Contains(filter));
         }
 
         // 3. Глобальный поиск (Q)
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
-            query = query.Where(t => EF.Functions.ILike(t.NameEn, $"%{parameters.Q}%") ||
-                                    EF.Functions.ILike(t.NameEs, $"%{parameters.Q}%") ||
-                                    t.Slug.Contains(parameters.Q.ToLowerInvariant()));
+            var filter = parameters.Q.ToLower();
+            query = query.Where(t => t.NameEn.ToLower().Contains(filter) ||
+                                    t.NameEs.ToLower().Contains(filter) ||
+                                    t.Slug.Contains(filter));
         }
 
         // 4. Подсчет общего количества до пагинации
@@ -92,11 +96,9 @@ public class TagService(DirectoryDbContext db) : ITagService
 
     public async Task<TagResponseDto?> CreateAsync(TagUpsertDto dto, CancellationToken ct = default)
     {
-        // 1. Проверка наличия родительской группы
         var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
         if (!groupExists) return null;
 
-        // 2. Проверка уникальности слага
         var slugLower = dto.Slug.ToLowerInvariant();
         if (await db.Tags.AnyAsync(t => t.Slug == slugLower, ct)) return null;
 
@@ -120,14 +122,12 @@ public class TagService(DirectoryDbContext db) : ITagService
         var tag = await db.Tags.FindAsync([id], ct);
         if (tag == null) return null;
 
-        // 1. Проверка наличия родительской группы (если она изменилась)
         if (tag.TagGroupId != dto.TagGroupId)
         {
             var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
             if (!groupExists) return null;
         }
 
-        // 2. Проверка уникальности слага
         var slugLower = dto.Slug.ToLowerInvariant();
         if (tag.Slug != slugLower && await db.Tags.AnyAsync(t => t.Slug == slugLower, ct))
         {
