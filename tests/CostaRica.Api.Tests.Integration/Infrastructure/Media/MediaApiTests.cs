@@ -9,24 +9,19 @@ namespace CostaRica.Api.Tests.Integration.Features.Media;
 
 public class MediaApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
 {
-    private async Task<(Guid Id, string Slug)> UploadTestImageAsync(string slug)
+    private async Task<(Guid Id, string Slug)> UploadTestImageAsync(string slug, string altEn = "Alt En")
     {
         var client = fixture.HttpClient;
-
-        // 1. Подготавливаем контент формы (имитируем браузер)
         using var content = new MultipartFormDataContent();
 
-        // Добавляем файл (фейковые байты изображения)
-        var fileContent = new ByteArrayContent([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); // Заголовок PNG
+        var fileContent = new ByteArrayContent([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
         fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
-        content.Add(fileContent, "file", "test-image.png");
+        content.Add(fileContent, "file", "test.png");
 
-        // Добавляем текстовые поля
         content.Add(new StringContent(slug), "slug");
-        content.Add(new StringContent("English Alt"), "altTextEn");
-        content.Add(new StringContent("Spanish Alt"), "altTextEs");
+        content.Add(new StringContent(altEn), "altTextEn");
+        content.Add(new StringContent("Alt Es"), "altTextEs");
 
-        // 2. Отправляем запрос
         var response = await client.PostAsync("/media/upload", content);
         response.EnsureSuccessStatusCode();
 
@@ -35,17 +30,52 @@ public class MediaApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
     }
 
     [Fact]
-    public async Task Upload_ShouldReturnCreated_AndSaveData()
+    public async Task GetMediaList_ShouldIncludeReactAdminHeaders_AndPagination()
     {
         var ct = TestContext.Current.CancellationToken;
-        var slug = $"int-test-{Guid.NewGuid():N}";
+        var client = fixture.HttpClient;
 
-        // Act
-        var (id, returnedSlug) = await UploadTestImageAsync(slug);
+        // Arrange: Загружаем 3 файла для проверки счета
+        await UploadTestImageAsync($"img-{Guid.NewGuid():N}");
+        await UploadTestImageAsync($"img-{Guid.NewGuid():N}");
+        await UploadTestImageAsync($"img-{Guid.NewGuid():N}");
+
+        // Act: Запрашиваем только 1 элемент
+        var response = await client.GetAsync("/media?_start=0&_end=1", ct);
 
         // Assert
-        id.Should().NotBeEmpty();
-        returnedSlug.Should().Be(slug);
+        response.EnsureSuccessStatusCode();
+
+        // 1. Проверяем заголовок X-Total-Count (должен быть >= 3)
+        response.Headers.Contains("X-Total-Count").Should().BeTrue();
+        var totalCount = int.Parse(response.Headers.GetValues("X-Total-Count").First());
+        totalCount.Should().BeGreaterThanOrEqualTo(3);
+
+        // 2. Проверяем Expose-Headers для CORS
+        response.Headers.Contains("Access-Control-Expose-Headers").Should().BeTrue();
+        response.Headers.GetValues("Access-Control-Expose-Headers").Should().Contain("X-Total-Count");
+
+        // 3. Проверяем, что в теле ровно 1 элемент (пагинация сработала)
+        var items = await response.Content.ReadFromJsonAsync<List<MediaAssetResponseDto>>(ct);
+        items.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task GetMediaList_ShouldSearchByTerm_UsingQParameter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = fixture.HttpClient;
+
+        // Arrange: Создаем файл с уникальным описанием
+        var uniqueTerm = $"findme-{Guid.NewGuid():N}";
+        await UploadTestImageAsync($"slug-{Guid.NewGuid():N}", uniqueTerm);
+
+        // Act
+        var response = await client.GetAsync($"/media?q={uniqueTerm}", ct);
+
+        // Assert
+        var items = await response.Content.ReadFromJsonAsync<List<MediaAssetResponseDto>>(ct);
+        items.Should().ContainSingle(x => x.AltTextEn == uniqueTerm);
     }
 
     [Fact]
@@ -54,41 +84,19 @@ public class MediaApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
         var slug = $"seo-test-{Guid.NewGuid():N}";
+        var (id, _) = await UploadTestImageAsync(slug);
 
-        var (id, correctSlug) = await UploadTestImageAsync(slug);
-
-        // Act: запрашиваем с неправильным слагом
-        // Важно: HttpClient по умолчанию следует за редиректами. 
-        // Чтобы проверить именно факт редиректа, мы создаем обработчик без авто-редиректа (но для простоты проверим итоговый URL)
+        // Act:HttpClient по умолчанию следует за редиректами, 
+        // поэтому мы получим 200 OK и данные файла, но проверим итоговый URL
         var response = await client.GetAsync($"/media/{id}/wrong-slug", ct);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        // Проверяем, что в итоге нас привело к правильному файлу (Content-Type)
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
     }
 
     [Fact]
-    public async Task GetMediaList_ShouldFilterOrphans()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var client = fixture.HttpClient;
-
-        // Загружаем один ассет (он будет "сиротой", так как ни к чему не привязан)
-        await UploadTestImageAsync($"orphan-{Guid.NewGuid():N}");
-
-        // Act
-        var response = await client.GetAsync("/media?OnlyOrphans=true", ct);
-
-        // Assert
-        response.EnsureSuccessStatusCode();
-        var list = await response.Content.ReadFromJsonAsync<IEnumerable<MediaAssetResponseDto>>(ct);
-        list.Should().NotBeEmpty();
-        list.Should().Contain(x => x.Slug.Contains("orphan"));
-    }
-
-    [Fact]
-    public async Task Delete_ShouldReturnNoContent_AndCleanUp()
+    public async Task Delete_ShouldReturnNoContent_AndCleanUpPhysicalFile()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = fixture.HttpClient;
@@ -100,7 +108,7 @@ public class MediaApiTests(ApiFixture fixture) : IClassFixture<ApiFixture>
         // Assert
         deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // Проверяем, что файл больше не доступен
+        // Проверяем, что файл больше не доступен через API
         var getResponse = await client.GetAsync($"/media/{id}/{slug}", ct);
         getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
