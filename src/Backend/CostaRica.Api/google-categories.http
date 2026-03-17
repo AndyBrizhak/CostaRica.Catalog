@@ -1,74 +1,106 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
-@categoryId = 029d6b68-3d08-48b9-8dcf-6343ab7a8468
-@gcid = test_manual_entry
-@gcid_updated = test_manual_entry_updated
+
+# Используем уникальный префикс для сессии тестирования
+@temp_gcid = cat_{{$guid}}
 
 ###
-# 1. Получить список всех категорий
-GET {{base_url}}/api/google-categories
-Accept: {{contentType}}
-
-###
-# 2. Поиск с фильтрацией и пагинацией
-GET {{base_url}}/api/google-categories?searchTerm=coffee&page=1&pageSize=5&sortBy=NameEs&isAscending=false
-Accept: {{contentType}}
-
-###
-# 3. Создать новую категорию
+# 1. СОЗДАНИЕ (CREATE)
+# @name createCategory
 POST {{base_url}}/api/google-categories
 Content-Type: {{contentType}}
 
 {
-  "gcid": "{{gcid}}",
-  "nameEn": "Manual Test Category",
-  "nameEs": "Categoría de prueba manual"
+  "gcid": "{{temp_gcid}}",
+  "nameEn": "Dynamic Category",
+  "nameEs": "Categoría Dinámica"
 }
 
 ###
-# 4. Получить категорию по ID
-GET {{base_url}}/api/google-categories/{{categoryId}}
+
+# Захватываем ID и начальный GCID из ответа
+@categoryId = {{createCategory.response.body.$.id}}
+@initialGcid = {{createCategory.response.body.$.gcid}}
+
+# 2. ПРОВЕРКА ПОСЛЕ СОЗДАНИЯ (GET BY INITIAL GCID)
+# Этот запрос должен вернуть 200 OK
+GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}
 Accept: {{contentType}}
 
 ###
-# 5. Получить категорию по техническому коду GCID
-GET {{base_url}}/api/google-categories/gcid/{{gcid}}
+
+# 3. ПОЛУЧЕНИЕ СПИСКА (REACT ADMIN STANDARDS)
+
+# 3.1. Получение с пагинацией и сортировкой
+GET {{base_url}}/api/google-categories?_start=0&_end=10&_sort=NameEn&_order=ASC
 Accept: {{contentType}}
 
 ###
-# 6. Обновить данные категории (меняет GCID на обновленный)
+
+# 3.2. Поиск (Query)
+GET {{base_url}}/api/google-categories?q={{initialGcid}}
+Accept: {{contentType}}
+
+###
+
+# 3.3. Получение группы по ID (GET_MANY)
+GET {{base_url}}/api/google-categories?id={{categoryId}}
+Accept: {{contentType}}
+
+###
+
+# 4. ОБНОВЛЕНИЕ (UPDATE)
+# Изменяем GCID, добавляя суффикс _updated
 PUT {{base_url}}/api/google-categories/{{categoryId}}
 Content-Type: {{contentType}}
 
 {
-  "gcid": "{{gcid_updated}}",
+  "gcid": "{{initialGcid}}_updated",
   "nameEn": "Updated Category Name",
-  "nameEs": "Nombre de categoría actualizado"
+  "nameEs": "Nombre Actualizado"
 }
 
 ###
-# 7. Получить категорию по новому коду GCID после обновления
-GET {{base_url}}/api/google-categories/gcid/{{gcid_updated}}
+
+# 5. ПРОВЕРКА ПОСЛЕ ОБНОВЛЕНИЯ
+
+# 5.1. Поиск по НОВОМУ GCID (Должен вернуть 200 OK)
+GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}_updated
 Accept: {{contentType}}
 
 ###
-# 8. Массовый импорт тестовых записей
+
+# 5.2. Поиск по СТАРОМУ GCID (Должен вернуть 404 Not Found, так как значение изменилось)
+GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}
+Accept: {{contentType}}
+
+###
+
+# 6. МАССОВЫЙ ИМПОРТ (BULK)
 POST {{base_url}}/api/google-categories/bulk
 Content-Type: {{contentType}}
 
 [
   {
-    "gcid": "bulk_test_1",
-    "nameEn": "Bulk Test One",
-    "nameEs": "Prueba masiva uno"
+    "gcid": "bulk_1_{{$guid}}",
+    "nameEn": "Bulk Category 1",
+    "nameEs": "Categoría Masiva 1"
   },
   {
-    "gcid": "bulk_test_2",
-    "nameEn": "Bulk Test Two",
-    "nameEs": "Prueba masiva dos"
+    "gcid": "bulk_2_{{$guid}}",
+    "nameEn": "Bulk Category 2",
+    "nameEs": "Categoría Masiva 2"
   }
 ]
 
 ###
-# 9. Удалить тестовую категорию
+
+# 7. УДАЛЕНИЕ (DELETE)
 DELETE {{base_url}}/api/google-categories/{{categoryId}}
+Accept: {{contentType}}
+
+###
+
+# 8. ФИНАЛЬНАЯ ПРОВЕРКА (Должен вернуть 404)
+GET {{base_url}}/api/google-categories/{{categoryId}}
+Accept: {{contentType}}

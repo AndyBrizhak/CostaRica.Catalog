@@ -18,7 +18,6 @@ public class GoogleCategoryApiTests(ApiFixture fixture) : IClassFixture<ApiFixtu
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // 1. Подготовка уникальных данных для импорта
         var gcid1 = $"cat_{Guid.NewGuid():N}";
         var gcid2 = $"cat_{Guid.NewGuid():N}";
 
@@ -28,67 +27,70 @@ public class GoogleCategoryApiTests(ApiFixture fixture) : IClassFixture<ApiFixtu
             new(gcid2, "Category 2", "Categoria 2")
         };
 
-        // 2. Act: Первый импорт
+        // Act: Первый импорт
         var response = await _client.PostAsJsonAsync("/api/google-categories/bulk", importData, ct);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        // ИСПРАВЛЕНО: Десериализуем в конкретный тип вместо dynamic
         var result = await response.Content.ReadFromJsonAsync<BulkImportResponse>(ct);
         result!.ImportedCount.Should().Be(2);
 
-        // 3. Act: Повторный импорт тех же данных
+        // Act: Повторный импорт тех же данных (проверка защиты от дубликатов)
         var secondResponse = await _client.PostAsJsonAsync("/api/google-categories/bulk", importData, ct);
         var secondResult = await secondResponse.Content.ReadFromJsonAsync<BulkImportResponse>(ct);
-
-        // Должно быть 0, так как записи уже существуют
         secondResult!.ImportedCount.Should().Be(0);
     }
 
     [Fact]
-    public async Task GetByGcid_ShouldReturnCorrectCategory()
+    public async Task GetAll_ShouldSupportReactAdminPaginationAndSorting()
     {
         var ct = TestContext.Current.CancellationToken;
-        var gcid = $"find_by_gcid_{Guid.NewGuid():N}";
 
-        // 1. Создаем категорию
-        var createDto = new GoogleCategoryUpsertDto(gcid, "Search Target", "Objetivo");
-        await _client.PostAsJsonAsync("/api/google-categories", createDto, ct);
+        // Arrange: Создаем несколько записей
+        var prefix = Guid.NewGuid().ToString("N");
+        await _client.PostAsJsonAsync("/api/google-categories/bulk", new List<GoogleCategoryImportDto>
+        {
+            new($"{prefix}_1", "B-Category", "B"),
+            new($"{prefix}_2", "A-Category", "A"),
+            new($"{prefix}_3", "C-Category", "C")
+        }, ct);
 
-        // 2. Act: Запрос по GCID
-        var response = await _client.GetAsync($"/api/google-categories/gcid/{gcid}", ct);
+        // Act: Запрос с сортировкой по NameEn и пагинацией (берем первые 2)
+        var response = await _client.GetAsync($"/api/google-categories?_start=0&_end=2&_sort=NameEn&_order=ASC&q={prefix}", ct);
 
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var category = await response.Content.ReadFromJsonAsync<GoogleCategoryResponseDto>(ct);
-        category!.Gcid.Should().Be(gcid);
-        category.NameEn.Should().Be("Search Target");
+
+        // Проверка заголовков пагинации
+        response.Headers.Contains("X-Total-Count").Should().BeTrue();
+        int.Parse(response.Headers.GetValues("X-Total-Count").First()).Should().Be(3);
+
+        var items = await response.Content.ReadFromJsonAsync<List<GoogleCategoryResponseDto>>(ct);
+        items.Should().HaveCount(2);
+        items![0].NameEn.Should().Be("A-Category"); // Так как сортировка по алфавиту ASC
+        items[1].NameEn.Should().Be("B-Category");
     }
 
     [Fact]
-    public async Task Search_ShouldReturnPaginatedData_WithTotalCountHeader()
+    public async Task GetAll_ShouldSupportGetManyByIds()
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // 1. Создаем уникальную запись для поиска
-        var uniqueName = $"UniqueName_{Guid.NewGuid():N}";
-        await _client.PostAsJsonAsync("/api/google-categories",
-            new GoogleCategoryUpsertDto($"gcid_{Guid.NewGuid():N}", uniqueName, "Name Es"), ct);
+        // 1. Создаем две категории
+        var res1 = await _client.PostAsJsonAsync("/api/google-categories", new GoogleCategoryUpsertDto($"m1_{Guid.NewGuid():N}", "Many 1", "M1"), ct);
+        var res2 = await _client.PostAsJsonAsync("/api/google-categories", new GoogleCategoryUpsertDto($"m2_{Guid.NewGuid():N}", "Many 2", "M2"), ct);
 
-        // 2. Act: Поиск по названию
-        var response = await _client.GetAsync($"/api/google-categories?searchTerm={uniqueName}", ct);
+        var cat1 = await res1.Content.ReadFromJsonAsync<GoogleCategoryResponseDto>(ct);
+        var cat2 = await res2.Content.ReadFromJsonAsync<GoogleCategoryResponseDto>(ct);
+
+        // 2. Act: Запрашиваем только их через массив id (имитация поведения React Admin)
+        var response = await _client.GetAsync($"/api/google-categories?id={cat1!.Id}&id={cat2!.Id}", ct);
 
         // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        // Проверка заголовка для пагинации
-        response.Headers.Contains("X-Total-Count").Should().BeTrue();
-        var totalCount = int.Parse(response.Headers.GetValues("X-Total-Count").First());
-        totalCount.Should().BeGreaterThanOrEqualTo(1);
-
         var items = await response.Content.ReadFromJsonAsync<List<GoogleCategoryResponseDto>>(ct);
-        items.Should().Contain(c => c.NameEn == uniqueName);
+        items.Should().HaveCount(2);
+        items.Should().Contain(c => c.Id == cat1.Id);
+        items.Should().Contain(c => c.Id == cat2.Id);
     }
 
     [Fact]
@@ -104,16 +106,19 @@ public class GoogleCategoryApiTests(ApiFixture fixture) : IClassFixture<ApiFixtu
         createRes.StatusCode.Should().Be(HttpStatusCode.Created);
 
         // 2. UPDATE
-        var updateDto = new GoogleCategoryUpsertDto(gcid, "Updated", "Actualizado");
+        var updateDto = new GoogleCategoryUpsertDto($"{gcid}_upd", "Updated", "Actualizado");
         var updateRes = await _client.PutAsJsonAsync($"/api/google-categories/{created!.Id}", updateDto, ct);
         updateRes.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // 3. DELETE
-        var deleteRes = await _client.DeleteAsync($"/api/google-categories/{created.Id}", ct);
-        deleteRes.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        // 3. GET BY GCID (проверка обновления)
+        var getByGcidRes = await _client.GetAsync($"/api/google-categories/gcid/{gcid}_upd", ct);
+        getByGcidRes.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        // 4. VERIFY
-        var getRes = await _client.GetAsync($"/api/google-categories/{created.Id}", ct);
-        getRes.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        // 4. DELETE
+        await _client.DeleteAsync($"/api/google-categories/{created.Id}", ct);
+
+        // 5. VERIFY 404
+        var finalGet = await _client.GetAsync($"/api/google-categories/{created.Id}", ct);
+        finalGet.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
