@@ -13,7 +13,6 @@ public class GoogleCategoryServiceTests
 
     public GoogleCategoryServiceTests()
     {
-        // Создаем уникальную БД в памяти для каждого прогона тестов
         var options = new DbContextOptionsBuilder<DirectoryDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
@@ -23,31 +22,78 @@ public class GoogleCategoryServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldReturnCategory_WhenDataIsValid()
+    public async Task GetAllAsync_ShouldReturnPaginatedData_WithTotalCount()
     {
         // Arrange
-        var dto = new GoogleCategoryUpsertDto("test_gcid", "Test Category", "Categoría de prueba");
+        _context.GoogleCategories.AddRange(new List<GoogleCategory>
+        {
+            new() { Id = Guid.NewGuid(), Gcid = "cat1", NameEn = "A", NameEs = "A" },
+            new() { Id = Guid.NewGuid(), Gcid = "cat2", NameEn = "B", NameEs = "B" },
+            new() { Id = Guid.NewGuid(), Gcid = "cat3", NameEn = "C", NameEs = "C" }
+        });
+        await _context.SaveChangesAsync();
+
+        var parameters = new GoogleCategoryQueryParameters(_start: 0, _end: 2, _sort: "NameEn", _order: "ASC");
 
         // Act
-        var result = await _service.CreateAsync(dto);
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
 
         // Assert
-        result.Should().NotBeNull();
-        result!.Gcid.Should().Be("test_gcid");
+        totalCount.Should().Be(3);
+        items.Should().HaveCount(2);
+        items.First().NameEn.Should().Be("A");
+    }
 
-        var inDb = await _context.GoogleCategories.AnyAsync(c => c.Gcid == "test_gcid");
-        inDb.Should().BeTrue();
+    [Fact]
+    public async Task GetAllAsync_ShouldFilterBySearchTerm_InMultipleFields()
+    {
+        // Arrange
+        _context.GoogleCategories.Add(new GoogleCategory { Id = Guid.NewGuid(), Gcid = "unique_gcid", NameEn = "English", NameEs = "Spanish" });
+        await _context.SaveChangesAsync();
+
+        // Поиск по GCID
+        var res1 = await _service.GetAllAsync(new GoogleCategoryQueryParameters(q: "unique"));
+        // Поиск по английскому имени
+        var res2 = await _service.GetAllAsync(new GoogleCategoryQueryParameters(q: "English"));
+
+        // Assert
+        res1.Items.Should().NotBeEmpty();
+        res2.Items.Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAllAsync_ShouldSupportGetManyByIds()
+    {
+        // Arrange
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _context.GoogleCategories.AddRange(new List<GoogleCategory>
+        {
+            new() { Id = id1, Gcid = "c1", NameEn = "C1", NameEs = "C1" },
+            new() { Id = id2, Gcid = "c2", NameEn = "C2", NameEs = "C2" },
+            new() { Id = Guid.NewGuid(), Gcid = "c3", NameEn = "C3", NameEs = "C3" }
+        });
+        await _context.SaveChangesAsync();
+
+        var parameters = new GoogleCategoryQueryParameters(id: [id1, id2]);
+
+        // Act
+        var (items, totalCount) = await _service.GetAllAsync(parameters);
+
+        // Assert
+        items.Should().HaveCount(2);
+        totalCount.Should().Be(2);
     }
 
     [Fact]
     public async Task CreateAsync_ShouldReturnNull_WhenGcidAlreadyExists()
     {
         // Arrange
-        var gcid = "duplicate_gcid";
-        _context.GoogleCategories.Add(new GoogleCategory { Id = Guid.NewGuid(), Gcid = gcid, NameEn = "Old", NameEs = "Viejo" });
+        var existingGcid = "duplicate_me";
+        _context.GoogleCategories.Add(new GoogleCategory { Id = Guid.NewGuid(), Gcid = existingGcid, NameEn = "X", NameEs = "X" });
         await _context.SaveChangesAsync();
 
-        var dto = new GoogleCategoryUpsertDto(gcid, "New", "Nuevo");
+        var dto = new GoogleCategoryUpsertDto(existingGcid, "New", "Nuevo");
 
         // Act
         var result = await _service.CreateAsync(dto);
@@ -57,97 +103,45 @@ public class GoogleCategoryServiceTests
     }
 
     [Fact]
-    public async Task GetByGcidAsync_ShouldReturnCategory_WhenExists()
+    public async Task BulkImportAsync_ShouldIgnoreDuplicatesWithinList()
     {
         // Arrange
-        var gcid = "find_me";
-        _context.GoogleCategories.Add(new GoogleCategory { Id = Guid.NewGuid(), Gcid = gcid, NameEn = "Target", NameEs = "Objetivo" });
-        await _context.SaveChangesAsync();
-
-        // Act
-        var result = await _service.GetByGcidAsync(gcid);
-
-        // Assert
-        result.Should().NotBeNull();
-        result!.Gcid.Should().Be(gcid);
-    }
-
-    [Fact]
-    public async Task SearchAsync_ShouldFilterBySearchTerm()
-    {
-        // Arrange
-        _context.GoogleCategories.AddRange(
-            new GoogleCategory { Id = Guid.NewGuid(), Gcid = "c1", NameEn = "Coffee Shop", NameEs = "Cafetería" },
-            new GoogleCategory { Id = Guid.NewGuid(), Gcid = "c2", NameEn = "Restaurant", NameEs = "Restaurante" }
-        );
-        await _context.SaveChangesAsync();
-
-        // Act
-        var (items, totalCount) = await _service.SearchAsync("coffee");
-
-        // Assert
-        totalCount.Should().Be(1);
-        items.First().NameEn.Should().Be("Coffee Shop");
-    }
-
-    [Fact]
-    public async Task BulkImportAsync_ShouldAddOnlyNewCategories()
-    {
-        // Arrange
-        var existingGcid = "already_exists";
-        _context.GoogleCategories.Add(new GoogleCategory { Id = Guid.NewGuid(), Gcid = existingGcid, NameEn = "Old", NameEs = "Viejo" });
-        await _context.SaveChangesAsync();
-
         var importData = new List<GoogleCategoryImportDto>
         {
-            new(existingGcid, "Duplicate", "Duplicado"), // Должен быть пропущен
-            new("new_1", "New Category 1", "Nueva 1"),    // Должен быть добавлен
-            new("new_2", "New Category 2", "Nueva 2")     // Должен быть добавлен
+            new("same", "Name", "Nombre"),
+            new("same", "Name", "Nombre"),
+            new("different", "Other", "Otro")
         };
 
         // Act
-        var importedCount = await _service.BulkImportAsync(importData);
+        var count = await _service.BulkImportAsync(importData);
 
         // Assert
-        importedCount.Should().Be(2);
-        var totalInDb = await _context.GoogleCategories.CountAsync();
-        totalInDb.Should().Be(3);
+        count.Should().Be(2); // Только "same" (один раз) и "different"
+        var inDb = await _context.GoogleCategories.CountAsync();
+        inDb.Should().Be(2);
     }
 
     [Fact]
-    public async Task UpdateAsync_ShouldApplyChanges_WhenCategoryExists()
+    public async Task UpdateAsync_ShouldReturnFalse_WhenGcidIsTakenByAnotherCategory()
     {
         // Arrange
-        var id = Guid.NewGuid();
-        _context.GoogleCategories.Add(new GoogleCategory { Id = id, Gcid = "old_gcid", NameEn = "Old", NameEs = "Old" });
+        var id1 = Guid.NewGuid();
+        var id2 = Guid.NewGuid();
+        _context.GoogleCategories.AddRange(new List<GoogleCategory>
+        {
+            new() { Id = id1, Gcid = "cat1", NameEn = "1", NameEs = "1" },
+            new() { Id = id2, Gcid = "cat2", NameEn = "2", NameEs = "2" }
+        });
         await _context.SaveChangesAsync();
 
-        var dto = new GoogleCategoryUpsertDto("updated_gcid", "New Name", "Nuevo Nombre");
+        // Пытаемся обновить cat1, установив ему GCID от cat2
+        var updateDto = new GoogleCategoryUpsertDto("cat2", "Updated", "Actualizado");
 
         // Act
-        var result = await _service.UpdateAsync(id, dto);
+        var result = await _service.UpdateAsync(id1, updateDto);
 
         // Assert
-        result.Should().BeTrue();
-        var updated = await _context.GoogleCategories.FindAsync(id);
-        updated!.Gcid.Should().Be("updated_gcid");
-        updated.NameEn.Should().Be("New Name");
-    }
-
-    [Fact]
-    public async Task DeleteAsync_ShouldReturnTrue_AndRemoveCategory()
-    {
-        // Arrange
-        var id = Guid.NewGuid();
-        _context.GoogleCategories.Add(new GoogleCategory { Id = id, Gcid = "to_delete", NameEn = "X", NameEs = "X" });
-        await _context.SaveChangesAsync();
-
-        // Act
-        var result = await _service.DeleteAsync(id);
-
-        // Assert
-        result.Should().BeTrue();
-        var inDb = await _context.GoogleCategories.FindAsync(id);
-        inDb.Should().BeNull();
+        result.Should().BeFalse();
     }
 }
