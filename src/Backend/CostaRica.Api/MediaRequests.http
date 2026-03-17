@@ -1,0 +1,100 @@
+﻿@base_url = http://localhost:5046
+@slug = test-sunset-beach
+
+# 1. ЗАГРУЗКА (CREATE)
+# @name uploadMedia
+POST {{base_url}}/media/upload
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="slug"
+
+{{slug}}
+--WebAppBoundary
+Content-Disposition: form-data; name="altTextEn"
+
+Beautiful sunset at the beach
+--WebAppBoundary
+Content-Disposition: form-data; name="altTextEs"
+
+Hermoso atardecer en la playa
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test_image.png"
+Content-Type: image/png
+
+< ./test_input.png
+--WebAppBoundary--
+
+###
+
+@asset_id = {{uploadMedia.response.body.$.id}}
+
+# 2. ПОЛУЧЕНИЕ СПИСКА (REACT ADMIN STANDARDS)
+
+# 2.1. Получить все (по умолчанию CreatedAt DESC)
+GET {{base_url}}/media
+
+###
+
+# 2.2. Пагинация (первые 5 элементов)
+# Проверь заголовок X-Total-Count в ответе
+GET {{base_url}}/media?_start=0&_end=5
+
+###
+
+# 2.3. Сортировка по слагу (ASC)
+GET {{base_url}}/media?_sort=Slug&_order=ASC
+
+###
+
+# 2.4. Полнотекстовый поиск (по слагу, альтам или имени файла)
+GET {{base_url}}/media?q=sunset
+
+###
+
+# 2.5. Фильтр "Сироты" (только не привязанные к бизнесу)
+GET {{base_url}}/media?onlyOrphans=true
+
+###
+
+# 2.6. Получение нескольких по ID (GET_MANY)
+GET {{base_url}}/media?id={{asset_id}}
+
+###
+
+
+# 3. ПОЛУЧЕНИЕ ДЕТАЛЕЙ (GET BY ID & SEO)
+
+# 3.1. По ID (возвращает JSON)
+GET {{base_url}}/media/{{asset_id}}
+
+###
+
+# 3.2. SEO URL (возвращает физический файл)
+GET {{base_url}}/media/{{asset_id}}/{{slug}}
+
+###
+
+# 3.3. SEO Redirect (проверка 301 редиректа при старом слаге)
+# Должен перенаправить на /media/{{asset_id}}/{{slug}}
+GET {{base_url}}/media/{{asset_id}}/old-wrong-slug
+
+###
+
+
+# 4. ОБНОВЛЕНИЕ (UPDATE)
+PUT {{base_url}}/media/{{asset_id}}
+Content-Type: application/json
+
+{
+  "slug": "updated-sunset-beach",
+  "altTextEn": "Updated English Alt",
+  "altTextEs": "Texto alternativo actualizado"
+}
+
+###
+
+
+# 5. УДАЛЕНИЕ (DELETE)
+# Файл удалится только если он не привязан к бизнесу
+DELETE {{base_url}}/media/{{asset_id}}

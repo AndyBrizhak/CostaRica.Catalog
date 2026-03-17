@@ -1,0 +1,106 @@
+﻿@base_url = http://localhost:5046
+@contentType = application/json
+
+# Используем уникальный префикс для сессии тестирования
+@temp_gcid = cat_{{$guid}}
+
+###
+# 1. СОЗДАНИЕ (CREATE)
+# @name createCategory
+POST {{base_url}}/api/google-categories
+Content-Type: {{contentType}}
+
+{
+  "gcid": "{{temp_gcid}}",
+  "nameEn": "Dynamic Category",
+  "nameEs": "Categoría Dinámica"
+}
+
+###
+
+# Захватываем ID и начальный GCID из ответа
+@categoryId = {{createCategory.response.body.$.id}}
+@initialGcid = {{createCategory.response.body.$.gcid}}
+
+# 2. ПРОВЕРКА ПОСЛЕ СОЗДАНИЯ (GET BY INITIAL GCID)
+# Этот запрос должен вернуть 200 OK
+GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}
+Accept: {{contentType}}
+
+###
+
+# 3. ПОЛУЧЕНИЕ СПИСКА (REACT ADMIN STANDARDS)
+
+# 3.1. Получение с пагинацией и сортировкой
+GET {{base_url}}/api/google-categories?_start=0&_end=10&_sort=NameEn&_order=ASC
+Accept: {{contentType}}
+
+###
+
+# 3.2. Поиск (Query)
+GET {{base_url}}/api/google-categories?q={{initialGcid}}
+Accept: {{contentType}}
+
+###
+
+# 3.3. Получение группы по ID (GET_MANY)
+GET {{base_url}}/api/google-categories?id={{categoryId}}
+Accept: {{contentType}}
+
+###
+
+# 4. ОБНОВЛЕНИЕ (UPDATE)
+# Изменяем GCID, добавляя суффикс _updated
+PUT {{base_url}}/api/google-categories/{{categoryId}}
+Content-Type: {{contentType}}
+
+{
+  "gcid": "{{initialGcid}}_updated",
+  "nameEn": "Updated Category Name",
+  "nameEs": "Nombre Actualizado"
+}
+
+###
+
+# 5. ПРОВЕРКА ПОСЛЕ ОБНОВЛЕНИЯ
+
+# 5.1. Поиск по НОВОМУ GCID (Должен вернуть 200 OK)
+GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}_updated
+Accept: {{contentType}}
+
+###
+
+# 5.2. Поиск по СТАРОМУ GCID (Должен вернуть 404 Not Found, так как значение изменилось)
+GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}
+Accept: {{contentType}}
+
+###
+
+# 6. МАССОВЫЙ ИМПОРТ (BULK)
+POST {{base_url}}/api/google-categories/bulk
+Content-Type: {{contentType}}
+
+[
+  {
+    "gcid": "bulk_1_{{$guid}}",
+    "nameEn": "Bulk Category 1",
+    "nameEs": "Categoría Masiva 1"
+  },
+  {
+    "gcid": "bulk_2_{{$guid}}",
+    "nameEn": "Bulk Category 2",
+    "nameEs": "Categoría Masiva 2"
+  }
+]
+
+###
+
+# 7. УДАЛЕНИЕ (DELETE)
+DELETE {{base_url}}/api/google-categories/{{categoryId}}
+Accept: {{contentType}}
+
+###
+
+# 8. ФИНАЛЬНАЯ ПРОВЕРКА (Должен вернуть 404)
+GET {{base_url}}/api/google-categories/{{categoryId}}
+Accept: {{contentType}}

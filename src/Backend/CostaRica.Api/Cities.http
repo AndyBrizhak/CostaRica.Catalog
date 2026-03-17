@@ -1,0 +1,77 @@
+﻿@base_url = http://localhost:5046
+
+# @name createProvince
+POST {{base_url}}/api/provinces
+Content-Type: application/json
+
+{
+  "name": "Guanacaste",
+  "slug": "guanacaste"
+}
+
+###
+
+# @name createCity
+POST {{base_url}}/api/cities
+Content-Type: application/json
+
+{
+  "name": "Liberia",
+  "slug": "liberia",
+  "provinceId": "{{createProvince.response.body.$.id}}"
+}
+
+###
+@provinceId = {{createProvince.response.body.$.id}}
+@cityId = {{createCity.response.body.$.id}}
+
+# 1. ПОЛУЧИТЬ ВСЕ (стандартный запрос)
+GET {{base_url}}/api/cities
+
+###
+
+# 2. ПАГИНАЦИЯ (первые 5 записей)
+# Обрати внимание на заголовок X-Total-Count в ответе
+GET {{base_url}}/api/cities?_start=0&_end=5
+
+###
+
+# 3. СОРТИРОВКА (по имени, в обратном порядке)
+GET {{base_url}}/api/cities?_sort=Name&_order=DESC
+
+###
+
+# 4. ФИЛЬТРАЦИЯ ПО ПРОВИНЦИИ (замена старому эндпоинту)
+GET {{base_url}}/api/cities?ProvinceId={{provinceId}}
+
+###
+
+# 5. ПОИСК ПО НАЗВАНИЮ (фильтр Name)
+GET {{base_url}}/api/cities?Name=Lib
+
+###
+
+# 6. ГЛОБАЛЬНЫЙ ПОИСК (параметр Q - ищет по имени и слагу)
+GET {{base_url}}/api/cities?Q=guan
+
+###
+
+# 7. ПОЛУЧЕНИЕ ПО ID (проверь наличие ProvinceName в JSON)
+GET {{base_url}}/api/cities/{{cityId}}
+
+###
+
+# 8. ОБНОВЛЕНИЕ
+PUT {{base_url}}/api/cities/{{cityId}}
+Content-Type: application/json
+
+{
+  "name": "Liberia City",
+  "slug": "liberia-city",
+  "provinceId": "{{provinceId}}"
+}
+
+###
+
+# 9. УДАЛЕНИЕ
+DELETE {{base_url}}/api/cities/{{cityId}}
