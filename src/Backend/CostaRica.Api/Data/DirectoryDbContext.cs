@@ -25,53 +25,49 @@ public class DirectoryDbContext : DbContext
         // 1. Инфраструктура PostGIS
         modelBuilder.HasPostgresExtension("postgis");
 
-        // 2. Уникальные индексы для Slugs (URL-адресов)
+        // 2. Уникальные индексы для Slugs (URL-адресов справочников)
         modelBuilder.Entity<Province>().HasIndex(p => p.Slug).IsUnique();
         modelBuilder.Entity<City>().HasIndex(c => c.Slug).IsUnique();
         modelBuilder.Entity<TagGroup>().HasIndex(tg => tg.Slug).IsUnique();
         modelBuilder.Entity<Tag>().HasIndex(t => t.Slug).IsUnique();
         modelBuilder.Entity<MediaAsset>().HasIndex(m => m.Slug).IsUnique();
-        modelBuilder.Entity<BusinessPage>().HasIndex(b => b.Slug).IsUnique();
 
-        // 3. Базовые связи (География и Теги)
-        modelBuilder.Entity<City>()
-            .HasOne(c => c.Province)
-            .WithMany(p => p.Cities)
-            .HasForeignKey(c => c.ProvinceId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        modelBuilder.Entity<Tag>()
-            .HasOne(t => t.TagGroup)
-            .WithMany(tg => tg.Tags)
-            .HasForeignKey(t => t.TagGroupId)
-            .OnDelete(DeleteBehavior.Restrict);
-
-        // 4. Конфигурация BusinessPage
+        // 3. Конфигурация BusinessPage
         modelBuilder.Entity<BusinessPage>(entity =>
         {
-            // Геолокация (Point в формате WGS84)
-            entity.Property(b => b.Location)
-                .HasColumnType("geography(Point, 4326)");
+            // Текущий слаг должен быть уникальным
+            entity.HasIndex(b => b.Slug).IsUnique();
 
-            // Внешние ключи для географии
+            // GIN-индекс для эффективного поиска внутри JSONB-массива OldSlugs
+            entity.HasIndex(b => b.OldSlugs).HasMethod("gin");
+
+            // GIST-индекс для пространственных запросов (гео-поиск по радиусу)
+            entity.HasIndex(b => b.Location).HasMethod("gist");
+
+            // Маппинг истории слагов в JSONB
+            entity.Property(b => b.OldSlugs)
+                .HasColumnType("jsonb")
+                .HasDefaultValueSql("'[]'::jsonb");
+
+            // Связь с Провинцией (обязательная)
             entity.HasOne(b => b.Province)
                 .WithMany()
                 .HasForeignKey(b => b.ProvinceId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Связь с Городом (опциональная)
             entity.HasOne(b => b.City)
                 .WithMany()
                 .HasForeignKey(b => b.CityId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            // КАТЕГОРИИ GOOGLE (ГИБРИДНАЯ МОДЕЛЬ)
-            // Основная категория (Primary)
+            // Основная категория Google (Primary)
             entity.HasOne(b => b.PrimaryCategory)
                 .WithMany()
                 .HasForeignKey(b => b.PrimaryCategoryId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            // Дополнительные категории (Secondary) — Many-to-Many
+            // Дополнительные категории Google (Secondary) — Many-to-Many
             entity.HasMany(b => b.SecondaryCategories)
                 .WithMany()
                 .UsingEntity(j => j.ToTable("BusinessSecondaryCategories"));
@@ -85,7 +81,8 @@ public class DirectoryDbContext : DbContext
                 .WithMany(m => m.BusinessPages)
                 .UsingEntity(j => j.ToTable("BusinessMedia"));
 
-            // 5. Данные в формате JSONB
+            // 4. Данные в формате JSONB (Owned Types)
+
             // SEO настройки
             entity.OwnsOne(b => b.Seo, seo =>
             {
@@ -99,12 +96,10 @@ public class DirectoryDbContext : DbContext
                 c.ToJson();
             });
 
-            // Расписание с вложенной коллекцией интервалов
+            // Расписание
             entity.OwnsMany(b => b.Schedule, s =>
             {
                 s.ToJson();
-                // Явно указываем владение вложенным списком Intervals внутри JSON
-                s.OwnsMany(sd => sd.Intervals);
             });
         });
     }
