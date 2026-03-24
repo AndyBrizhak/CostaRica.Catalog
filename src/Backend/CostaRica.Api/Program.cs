@@ -17,14 +17,32 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.AddServiceDefaults();
 
-builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextOptions: options =>
+// --- РЕГИСТРАЦИЯ КОНТЕКСТА БД (С поддержкой миграций вне Aspire) ---
+var isEfTooling = args.Contains("ef") || AppContext.GetData("EF_DESIGN_TIME") is true;
+
+if (isEfTooling)
 {
-    options.UseNpgsql(o =>
+    // Режим инструментов миграции: используем стандартную регистрацию с фиктивной строкой
+    builder.Services.AddDbContext<DirectoryDbContext>(options =>
     {
-        o.UseNetTopologySuite();
-        o.EnableRetryOnFailure();
+        options.UseNpgsql("Host=localhost;Database=unused", o =>
+        {
+            o.UseNetTopologySuite();
+        });
     });
-});
+}
+else
+{
+    // Обычный режим: используем регистрацию через Aspire
+    builder.AddNpgsqlDbContext<DirectoryDbContext>("postgresdb", configureDbContextOptions: options =>
+    {
+        options.UseNpgsql(o =>
+        {
+            o.UseNetTopologySuite();
+            o.EnableRetryOnFailure();
+        });
+    });
+}
 
 // Регистрация бизнес-сервисов
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
@@ -33,47 +51,46 @@ builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IGoogleCategoryService, GoogleCategoryService>();
 
-// --- НОВОЕ: Регистрация системы медиа-ассетов ---
-builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
-// Регистрируем основной сервис управления ассетами
+// Регистрация системы медиа-ассетов
 builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
+builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
 
-var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
-
+// Настройка обработки изображений ImageSharp
 builder.Services.AddImageSharp()
-    .Configure<PhysicalFileSystemProviderOptions>(options =>
-    {
-        options.ProviderRootPath = storagePath;
-    })
-    .Configure<PhysicalFileSystemCacheOptions>(options =>
-    {
-        options.CacheRootPath = Path.Combine(storagePath, "is-cache");
-    });
+    .SetCache<PhysicalFileSystemCache>()
+    .AddProvider<PhysicalFileSystemProvider>();
 
-// --- Настройка CORS (Разрешаем доступ для фронтенда) ---
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddOpenApi();
+
+// Настройка CORS для react-admin
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()
-              .AllowAnyMethod()
               .AllowAnyHeader()
-              .WithExposedHeaders("X-Total-Count"); // Разрешаем видеть заголовок пагинации
+              .AllowAnyMethod()
+              .WithExposedHeaders("X-Total-Count");
     });
 });
 
-builder.Services.AddOpenApi();
-
 var app = builder.Build();
 
-app.UseImageSharp();
 app.MapDefaultEndpoints();
 
-// ВКЛЮЧАЕМ CORS ТУТ:
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
+
+app.UseImageSharp();
+app.UseStaticFiles();
 app.UseCors("AllowAll");
 
-// Запуск миграций при старте
-if (!args.Contains("ef"))
+// Запуск миграций при старте (только если это не запуск инструментов миграции)
+if (!isEfTooling)
 {
     using (var scope = app.Services.CreateScope())
     {
@@ -111,15 +128,6 @@ app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
 app.MapGoogleCategoryEndpoints();
-
-// Добавляем мапинг медиа-эндпоинтов (файл создадим следующим шагом)
 app.MapMediaEndpoints();
-
-if (app.Environment.IsDevelopment())
-{
-    app.MapScalarApiReference();
-    app.MapOpenApi();
-    app.MapGet("/", () => Results.Redirect("/scalar/v1"));
-}
 
 app.Run();
