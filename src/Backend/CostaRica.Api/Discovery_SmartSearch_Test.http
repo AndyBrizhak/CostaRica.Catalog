@@ -1,0 +1,173 @@
+@base_url = http://localhost:5046
+@contentType = application/json
+@uLat=9.9333
+@uLon=-84.0833
+
+############################################################
+### ЭТАП 0: ПОДГОТОВКА СПРАВОЧНИКОВ
+############################################################
+
+### 0.1. Создаем Провинции
+# @name createProvSJ
+POST {{base_url}}/api/provinces
+Content-Type: {{contentType}}
+
+{ "name": "San José", "slug": "san-jose" }
+
+###
+# @name createProvAL
+POST {{base_url}}/api/provinces
+Content-Type: {{contentType}}
+
+{ "name": "Alajuela", "slug": "alajuela" }
+
+###
+@provSJ = {{createProvSJ.response.body.$.id}}
+@provAL = {{createProvAL.response.body.$.id}}
+
+### 0.2. Создаем Города
+# @name createCityEscazu
+POST {{base_url}}/api/cities
+Content-Type: {{contentType}}
+
+{ "name": "Escazú", "slug": "escazu", "provinceId": "{{provSJ}}" }
+
+###
+# @name createCityFortuna
+POST {{base_url}}/api/cities
+Content-Type: {{contentType}}
+
+{ "name": "La Fortuna", "slug": "la-fortuna", "provinceId": "{{provAL}}" }
+
+###
+@cityEscazu = {{createCityEscazu.response.body.$.id}}
+@cityFortuna = {{createCityFortuna.response.body.$.id}}
+
+### 0.3. Создаем Категорию и Теги
+# @name createCat
+POST {{base_url}}/api/google-categories
+Content-Type: {{contentType}}
+
+{ "gcid": "restaurant", "nameEn": "Restaurant", "nameEs": "Restaurante" }
+
+###
+@catId = {{createCat.response.body.$.id}}
+
+# @name createTagGroup
+POST {{base_url}}/api/tag-groups
+Content-Type: {{contentType}}
+
+{ "nameEn": "Features", "nameEs": "Особенности", "slug": "features" }
+
+###
+@tagGroupId = {{createTagGroup.response.body.$.id}}
+
+# @name tagWiFi
+POST {{base_url}}/api/tags
+Content-Type: {{contentType}}
+
+{ "nameEn": "WiFi", "nameEs": "WiFi", "slug": "wifi", "tagGroupId": "{{tagGroupId}}" }
+
+###
+# @name tagParking
+POST {{base_url}}/api/tags
+Content-Type: {{contentType}}
+
+{ "nameEn": "Parking", "nameEs": "Parqueo", "slug": "parking", "tagGroupId": "{{tagGroupId}}" }
+
+###
+# @name tagVegan
+POST {{base_url}}/api/tags
+Content-Type: {{contentType}}
+
+{ "nameEn": "Vegan", "nameEs": "Vegano", "slug": "vegan", "tagGroupId": "{{tagGroupId}}" }
+
+###
+@idWiFi = {{tagWiFi.response.body.$.id}}
+@idParking = {{tagParking.response.body.$.id}}
+@idVegan = {{tagVegan.response.body.$.id}}
+
+
+############################################################
+### ЭТАП 1: СОЗДАНИЕ БИЗНЕС-СТРАНИЦ (Разные локации и теги)
+############################################################
+
+### 1.1. Бизнес в Сан-Хосе (WiFi + Parking)
+POST {{base_url}}/api/admin/business-pages
+Content-Type: {{contentType}}
+
+{
+  "name": "SJ Central Coffee",
+  "slug": "sj-coffee",
+  "isPublished": true,
+  "languageCode": "en",
+  "provinceId": "{{provSJ}}",
+  "cityId": "{{cityEscazu}}",
+  "primaryCategoryId": "{{catId}}",
+  "location": { "latitude": 9.9333, "longitude": -84.0833 },
+  "contacts": {}, "schedule": [], "seo": { "title": "SJ", "description": "SJ", "keywords": "", "hreflangs": [] },
+  "tagIds": ["{{idWiFi}}", "{{idParking}}"],
+  "mediaIds": []
+}
+
+### 1.2. Бизнес в Алахуэле (Только WiFi)
+POST {{base_url}}/api/admin/business-pages
+Content-Type: {{contentType}}
+
+{
+  "name": "Alajuela Vegan Hub",
+  "slug": "al-vegan",
+  "isPublished": true,
+  "languageCode": "en",
+  "provinceId": "{{provAL}}",
+  "cityId": "{{cityFortuna}}",
+  "primaryCategoryId": "{{catId}}",
+  "location": { "latitude": 10.4709, "longitude": -84.6453 },
+  "contacts": {}, "schedule": [], "seo": { "title": "AL", "description": "AL", "keywords": "", "hreflangs": [] },
+  "tagIds": ["{{idWiFi}}", "{{idVegan}}"],
+  "mediaIds": []
+}
+
+
+############################################################
+### ЭТАП 2: УМНЫЙ ПОИСК (DRILL-DOWN) БЕЗ ГЕО-ПОЗИЦИИ
+############################################################
+
+### 2.1. Начальное состояние (Все доступно)
+GET {{base_url}}/api/discovery/provinces
+
+### 2.2. Выбираем провинцию Алахуэла -> Смотрим доступные города (Должна быть только Fortuna)
+GET {{base_url}}/api/discovery/cities?provinceId={{provAL}}
+
+### 2.3. В Алахуэле смотрим доступные теги (Должны быть WiFi и Vegan, но НЕ Parking)
+GET {{base_url}}/api/discovery/tags?provinceId={{provAL}}
+
+### 2.4. Выбираем тег "Vegan" -> Смотрим список оставшихся тегов (Должен остаться WiFi)
+GET {{base_url}}/api/discovery/tags?provinceId={{provAL}}&tagIds={{idVegan}}
+
+### 2.5. Итоговый поиск по этим фильтрам
+GET {{base_url}}/api/discovery/search?provinceId={{provAL}}&tagIds={{idVegan}}
+
+############################################################
+### ЭТАП 3: УМНЫЙ ПОИСК С ГЕО-ПОЗИЦИЕЙ
+############################################################
+
+### 3.1. Поиск в радиусе 10км от Сан-Хосе (Уже проверено ✅)
+GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.0833&radiusInKm=10
+
+### 3.2. Доступные Провинции в радиусе 10км (Должна быть только San José)
+GET {{base_url}}/api/discovery/provinces?lat=9.9333&lon=-84.0833&radiusInKm=10
+
+### 3.3. Расширяем радиус до 100км -> Доступные Провинции (Должны появиться обе: SJ и Alajuela)
+GET {{base_url}}/api/discovery/provinces?lat=9.9333&lon=-84.0833&radiusInKm=100
+
+### 3.4. В радиусе 100км выбираем тег "Parking" -> Доступные Города
+# Должен остаться только Escazú, так как в Алахуэле у нас нет заведений с парковкой
+GET {{base_url}}/api/discovery/cities?lat=9.9333&lon=-84.0833&radiusInKm=100&tagIds={{idParking}}
+
+### 3.5. Доступные теги в радиусе 100км (Должны быть все три: WiFi, Parking, Vegan)
+GET {{base_url}}/api/discovery/tags?lat=9.9333&lon=-84.0833&radiusInKm=100
+
+### 3.6. Поиск "WiFi" в радиусе 100км (Сортировка по дистанции)
+# Первым должен быть SJ (~0км), вторым Alajuela (~70км)
+GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.0833&radiusInKm=100&tagIds={{idWiFi}}
