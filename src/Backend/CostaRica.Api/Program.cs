@@ -46,7 +46,8 @@ builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IGoogleCategoryService, GoogleCategoryService>();
 builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
-builder.Services.AddScoped<IBusinessPageService, BusinessPageService>(); // Сервис из текущей ветки
+builder.Services.AddScoped<IBusinessPageService, BusinessPageService>();
+builder.Services.AddScoped<IDiscoveryService, DiscoveryService>(); // [NEW] Сервис умного поиска
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
 
 // --- IMAGESHARP (Твоя исходная конфигурация) ---
@@ -135,6 +136,7 @@ app.MapCityEndpoints();
 app.MapTagEndpoints();
 app.MapGoogleCategoryEndpoints();
 app.MapMediaEndpoints();
-app.MapBusinessPageEndpoints(); // Эндпоинты из текущей ветки
+app.MapBusinessPageEndpoints();
+app.MapDiscoveryEndpoints(); // [NEW] Эндпоинты умного поиска (Публичные)
 
 app.Run();
