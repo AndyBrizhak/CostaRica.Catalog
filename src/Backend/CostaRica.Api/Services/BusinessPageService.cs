@@ -18,10 +18,9 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             .Include(b => b.Province)
             .Include(b => b.City)
             .Include(b => b.PrimaryCategory)
-            .Include(b => b.SecondaryCategories) // Добавлено
+            .Include(b => b.SecondaryCategories)
             .AsQueryable();
 
-        // 1. Фильтрация
         if (parameters.provinceId.HasValue)
             query = query.Where(b => b.ProvinceId == parameters.provinceId.Value);
 
@@ -38,10 +37,8 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
                                     EF.Functions.ILike(b.Slug, search));
         }
 
-        // 2. Подсчет
         var totalCount = await query.CountAsync(ct);
 
-        // 3. Сортировка
         if (!string.IsNullOrWhiteSpace(parameters._sort))
         {
             var isAsc = parameters._order?.ToUpper() == "ASC";
@@ -57,7 +54,6 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             query = query.OrderBy(b => b.Name);
         }
 
-        // 4. Пагинация
         if (parameters._start.HasValue && parameters._end.HasValue)
         {
             var take = parameters._end.Value - parameters._start.Value;
@@ -79,7 +75,7 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             .Include(b => b.Province)
             .Include(b => b.City)
             .Include(b => b.PrimaryCategory)
-            .Include(b => b.SecondaryCategories) // Добавлено
+            .Include(b => b.SecondaryCategories)
             .Include(b => b.Tags)
             .Include(b => b.Media)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -118,13 +114,13 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        if (dto.TagIds.Any())
+        if (dto.TagIds is { Count: > 0 })
             business.Tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
 
-        if (dto.MediaIds.Any())
+        if (dto.MediaIds is { Count: > 0 })
             business.Media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
 
-        if (dto.SecondaryCategoryIds.Any())
+        if (dto.SecondaryCategoryIds is { Count: > 0 })
             business.SecondaryCategories = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
 
         db.BusinessPages.Add(business);
@@ -172,13 +168,16 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
         business.UpdatedAt = DateTimeOffset.UtcNow;
 
         business.Tags.Clear();
-        business.Tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
+        if (dto.TagIds is { Count: > 0 })
+            business.Tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
 
         business.Media.Clear();
-        business.Media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
+        if (dto.MediaIds is { Count: > 0 })
+            business.Media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
 
         business.SecondaryCategories.Clear();
-        business.SecondaryCategories = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
+        if (dto.SecondaryCategoryIds is { Count: > 0 })
+            business.SecondaryCategories = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
 
         await db.SaveChangesAsync(ct);
         return await GetByIdAsync(business.Id, ct);
@@ -199,41 +198,20 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
         return name.ToLowerInvariant()
             .Replace(" ", "-")
             .Replace("&", "and")
-            .Where(c => char.IsLetterOrDigit(c) || c == '-').Aggregate("", (s, c) => s + c);
+            // ИСПРАВЛЕНО: Используем символ '-' вместо строки "-"
+            .Where(c => char.IsLetterOrDigit(c) || c == '-')
+            .Aggregate("", (s, c) => s + c);
     }
 
     private static BusinessPageResponseDto MapToDto(BusinessPage b) => new(
-        b.Id,
-        b.IsPublished,
-        b.Name,
-        b.Slug,
-        b.OldSlugs,
-        b.LanguageCode,
-        b.Description,
-        b.ProvinceId,
-        b.Province?.Name,
-        b.CityId,
-        b.City?.Name,
+        b.Id, b.IsPublished, b.Name, b.Slug, b.OldSlugs, b.LanguageCode, b.Description,
+        b.ProvinceId, b.Province?.Name, b.CityId, b.City?.Name,
         new GeoPointDto(b.Location.Y, b.Location.X),
-        b.PrimaryCategoryId,
-        b.PrimaryCategory?.NameEn,
-        b.SecondaryCategories.Select(c => new GoogleCategoryResponseDto(c.Id, c.Gcid, c.NameEn, c.NameEs)), // Новое
-        b.Contacts,
-        b.Schedule,
-        b.Seo,
+        b.PrimaryCategoryId, b.PrimaryCategory?.NameEn,
+        b.SecondaryCategories.Select(c => new GoogleCategoryResponseDto(c.Id, c.Gcid, c.NameEn, c.NameEs)),
+        b.Contacts, b.Schedule, b.Seo,
         b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
-        b.Media.Select(m => new MediaAssetResponseDto(
-            m.Id,
-            m.Slug,
-            m.FileName,
-            m.ContentType,
-            m.AltTextEn,
-            m.AltTextEs,
-            $"/media/{m.FileName}",
-            m.CreatedAt,
-            new List<Guid> { b.Id }
-        )),
-        b.CreatedAt,
-        b.UpdatedAt
+        b.Media.Select(m => new MediaAssetResponseDto(m.Id, m.Slug, m.FileName, m.ContentType, m.AltTextEn, m.AltTextEs, $"/media/{m.FileName}", m.CreatedAt, new List<Guid> { b.Id })),
+        b.CreatedAt, b.UpdatedAt
     );
 }

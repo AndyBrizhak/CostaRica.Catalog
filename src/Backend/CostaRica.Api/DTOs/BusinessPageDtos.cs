@@ -1,12 +1,10 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using CostaRica.Api.Data;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CostaRica.Api.DTOs;
 
-// --- ТИПЫ ДАННЫХ ДЛЯ ГЕОПОЗИЦИИ ---
 public record GeoPointDto(double Latitude, double Longitude);
-
-// --- ADMIN DTOs (Для React Admin) ---
 
 public record BusinessPageResponseDto(
     Guid Id,
@@ -42,13 +40,13 @@ public record BusinessPageUpsertDto(
     [Required] Guid ProvinceId,
     Guid? CityId,
     Guid? PrimaryCategoryId,
-    List<Guid> SecondaryCategoryIds,
+    List<Guid>? SecondaryCategoryIds,
     [Required] GeoPointDto Location,
     BusinessContacts Contacts,
     List<ScheduleDay> Schedule,
     BusinessSeoSettings Seo,
-    List<Guid> TagIds,
-    List<Guid> MediaIds
+    List<Guid>? TagIds,
+    List<Guid>? MediaIds
 );
 
 public record BusinessPageQueryParameters(
@@ -61,8 +59,6 @@ public record BusinessPageQueryParameters(
     Guid? cityId = null,
     bool? isPublished = null
 );
-
-// --- DISCOVERY DTOs (Для публичного фронтенда) ---
 
 public record BusinessPageCardDto(
     string Name,
@@ -81,17 +77,13 @@ public record DiscoveryFiltersResponseDto(
     IEnumerable<TagResponseDto> Tags
 );
 
-/// <summary>
-/// Параметры поиска. 
-/// Использование массива Guid[] вместо List позволяет Minimal API корректно биндить параметры из Query String.
-/// </summary>
 public record DiscoverySearchParams(
     Guid? ProvinceId = null,
     Guid? CityId = null,
     double? Lat = null,
     double? Lon = null,
     double? RadiusInKm = null,
-    Guid[]? TagIds = null, // Заменено на массив для корректного маппинга
+    Guid[]? TagIds = null,
     int Page = 1,
     int PageSize = 10
 );
