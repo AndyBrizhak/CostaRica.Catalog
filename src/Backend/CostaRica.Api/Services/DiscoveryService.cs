@@ -17,10 +17,8 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             .AsNoTracking()
             .Where(b => b.IsPublished);
 
-        // 1. ПРИМЕНЕНИЕ ФИЛЬТРОВ
         query = ApplyDiscoveryFilters(query, @params);
 
-        // 2. ГЕО-ФИЛЬТРАЦИЯ (ST_DWithin)
         Point? userPoint = null;
         if (@params.Lat.HasValue && @params.Lon.HasValue)
         {
@@ -35,8 +33,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
 
         var totalCount = await query.CountAsync(ct);
 
-        // 3. МАППИНГ И СОРТИРОВКА
-        // Исправлено: Явно указываем IQueryable<BusinessPage>, чтобы избежать конфликта типов Include/OrderBy
         IQueryable<BusinessPage> itemsQuery = query
             .Include(b => b.Province)
             .Include(b => b.City)
@@ -52,7 +48,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             itemsQuery = itemsQuery.OrderBy(b => b.Name);
         }
 
-        // 4. ПАГИНАЦИЯ
         var skip = (@params.Page - 1) * @params.PageSize;
         var items = await itemsQuery
             .Skip(skip)
@@ -85,8 +80,9 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             .Select(b => b.Province)
             .Where(p => p != null)
             .Distinct()
+            // ИСПРАВЛЕНО: Сначала OrderBy по сущности, потом Select в DTO
+            .OrderBy(p => p!.Name)
             .Select(p => new ProvinceResponseDto(p!.Id, p.Name, p.Slug, null))
-            .OrderBy(p => p.Name)
             .ToListAsync(ct);
     }
 
@@ -101,8 +97,9 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             .Select(b => b.City)
             .Where(c => c != null)
             .Distinct()
+            // ИСПРАВЛЕНО: Сначала OrderBy по сущности, потом Select в DTO
+            .OrderBy(c => c!.Name)
             .Select(c => new CityResponseDto(c!.Id, c.Name, c.Slug, c.ProvinceId, null))
-            .OrderBy(c => c.Name)
             .ToListAsync(ct);
     }
 
@@ -117,8 +114,9 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
         return await query
             .SelectMany(b => b.Tags)
             .Distinct()
-            .Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId))
+            // ИСПРАВЛЕНО: Сначала OrderBy по сущности, потом Select в DTO
             .OrderBy(t => t.NameEn)
+            .Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId))
             .ToListAsync(ct);
     }
 
