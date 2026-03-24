@@ -27,7 +27,12 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             if (@params.RadiusInKm.HasValue)
             {
                 var radiusMeters = @params.RadiusInKm.Value * 1000;
-                query = query.Where(b => b.Location.Distance(userPoint) <= radiusMeters);
+
+                // БЫЛО (возвращает градусы, а не метры):
+                // query = query.Where(b => b.Location.Distance(userPoint) <= radiusMeters);
+
+                // СТАЛО (geography cast — PostGIS считает в метрах по сфере):
+                query = query.Where(b => EF.Functions.IsWithinDistance(b.Location, userPoint, radiusMeters, true));
             }
         }
 
@@ -41,7 +46,11 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
 
         if (userPoint != null)
         {
-            itemsQuery = itemsQuery.OrderBy(b => b.Location.Distance(userPoint));
+            // БЫЛО (возвращает градусы, а не метры):
+            // itemsQuery = itemsQuery.OrderBy(b => b.Location.Distance(userPoint));
+
+            // СТАЛО (geography cast — сортировка по реальному расстоянию в метрах):
+            itemsQuery = itemsQuery.OrderBy(b => EF.Functions.Distance(b.Location, userPoint, true));
         }
         else
         {
@@ -49,20 +58,46 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
         }
 
         var skip = (@params.Page - 1) * @params.PageSize;
-        var items = await itemsQuery
+
+        // БЫЛО (расстояние считалось в памяти после ToList, в градусах):
+        // var items = await itemsQuery
+        //     .Skip(skip)
+        //     .Take(@params.PageSize)
+        //     .ToListAsync(ct);
+        //
+        // var dtos = items.Select(b => new BusinessPageCardDto(
+        //     b.Name,
+        //     b.Slug,
+        //     b.Media.FirstOrDefault()?.FileName != null ? $"/media/{b.Media.First().FileName}" : null,
+        //     b.City?.Name,
+        //     b.Province?.Name,
+        //     b.PrimaryCategory?.NameEn,
+        //     new GeoPointDto(b.Location.Y, b.Location.X),
+        //     userPoint != null ? b.Location.Distance(userPoint) / 1000 : null
+        // ));
+
+        // СТАЛО (расстояние считается в SQL через geography, результат уже в километрах):
+        var rawData = await itemsQuery
             .Skip(skip)
             .Take(@params.PageSize)
+            .Select(b => new
+            {
+                Business = b,
+                DistanceKm = userPoint != null
+                    ? (double?)EF.Functions.Distance(b.Location, userPoint, true) / 1000
+                    : (double?)null
+            })
             .ToListAsync(ct);
 
-        var dtos = items.Select(b => new BusinessPageCardDto(
-            b.Name,
-            b.Slug,
-            b.Media.FirstOrDefault()?.FileName != null ? $"/media/{b.Media.First().FileName}" : null,
-            b.City?.Name,
-            b.Province?.Name,
-            b.PrimaryCategory?.NameEn,
-            new GeoPointDto(b.Location.Y, b.Location.X),
-            userPoint != null ? b.Location.Distance(userPoint) / 1000 : null
+        var dtos = rawData.Select(x => new BusinessPageCardDto(
+            x.Business.Name,
+            x.Business.Slug,
+            x.Business.Media.FirstOrDefault()?.FileName != null ? $"/media/{x.Business.Media.First().FileName}" : null,
+            x.Business.City?.Name,
+            x.Business.Province?.Name,
+            x.Business.PrimaryCategory?.NameEn,
+            new GeoPointDto(x.Business.Location.Y, x.Business.Location.X),
+            x.DistanceKm
         ));
 
         return (dtos, totalCount);
@@ -80,7 +115,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             .Select(b => b.Province)
             .Where(p => p != null)
             .Distinct()
-            // ИСПРАВЛЕНО: Сначала OrderBy по сущности, потом Select в DTO
             .OrderBy(p => p!.Name)
             .Select(p => new ProvinceResponseDto(p!.Id, p.Name, p.Slug, null))
             .ToListAsync(ct);
@@ -97,7 +131,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             .Select(b => b.City)
             .Where(c => c != null)
             .Distinct()
-            // ИСПРАВЛЕНО: Сначала OrderBy по сущности, потом Select в DTO
             .OrderBy(c => c!.Name)
             .Select(c => new CityResponseDto(c!.Id, c.Name, c.Slug, c.ProvinceId, null))
             .ToListAsync(ct);
@@ -114,7 +147,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
         return await query
             .SelectMany(b => b.Tags)
             .Distinct()
-            // ИСПРАВЛЕНО: Сначала OrderBy по сущности, потом Select в DTO
             .OrderBy(t => t.NameEn)
             .Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId))
             .ToListAsync(ct);
@@ -160,7 +192,12 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
         {
             var userPoint = _geometryFactory.CreatePoint(new Coordinate(p.Lon.Value, p.Lat.Value));
             var radiusMeters = p.RadiusInKm.Value * 1000;
-            query = query.Where(b => b.Location.Distance(userPoint) <= radiusMeters);
+
+            // БЫЛО (возвращает градусы, а не метры):
+            // query = query.Where(b => b.Location.Distance(userPoint) <= radiusMeters);
+
+            // СТАЛО (geography cast — PostGIS считает в метрах по сфере):
+            query = query.Where(b => EF.Functions.IsWithinDistance(b.Location, userPoint, radiusMeters, true));
         }
         return query;
     }
