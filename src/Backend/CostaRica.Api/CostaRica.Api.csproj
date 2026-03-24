@@ -26,4 +26,8 @@
     <ProjectReference Include="..\..\Aspire\CostaRica.Catalog.ServiceDefaults\CostaRica.Catalog.ServiceDefaults.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="wwwroot\" />
+  </ItemGroup>
+
 </Project>
