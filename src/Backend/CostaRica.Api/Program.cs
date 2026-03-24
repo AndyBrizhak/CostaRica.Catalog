@@ -50,6 +50,7 @@ builder.Services.AddScoped<ICityService, CityService>();
 builder.Services.AddScoped<ITagGroupService, TagGroupService>();
 builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IGoogleCategoryService, GoogleCategoryService>();
+builder.Services.AddScoped<IBusinessPageService, BusinessPageService>();
 
 // Регистрация системы медиа-ассетов
 builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
@@ -83,6 +84,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
+    app.MapGet("/", () => Results.Redirect("/scalar/v1"));
 }
 
 app.UseImageSharp();
@@ -129,5 +131,6 @@ app.MapCityEndpoints();
 app.MapTagEndpoints();
 app.MapGoogleCategoryEndpoints();
 app.MapMediaEndpoints();
+app.MapBusinessPageEndpoints();
 
 app.Run();
