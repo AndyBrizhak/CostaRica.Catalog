@@ -1,5 +1,7 @@
 @base_url = http://localhost:5046
 @contentType = application/json
+@uLat=9.9333
+@uLon=-84.0833
 
 ############################################################
 ### ЭТАП 0: ПОДГОТОВКА СПРАВОЧНИКОВ
@@ -146,32 +148,26 @@ GET {{base_url}}/api/discovery/tags?provinceId={{provAL}}&tagIds={{idVegan}}
 ### 2.5. Итоговый поиск по этим фильтрам
 GET {{base_url}}/api/discovery/search?provinceId={{provAL}}&tagIds={{idVegan}}
 
-
 ############################################################
 ### ЭТАП 3: УМНЫЙ ПОИСК С ГЕО-ПОЗИЦИЕЙ
 ############################################################
 
-# Точка пользователя: Центр Сан-Хосе (9.9333, -84.0833)
-@uLat = 9.9333
-@uLon = -84.0833
-
-### 3.1. Поиск в радиусе 10км от Сан-Хосе (Должен найти только SJ Central Coffee)
-# Проверьте поле "distance" в ответе — оно должно быть около 0
-GET {{base_url}}/api/discovery/search?lat={{uLat}}&lon={{uLon}}&radiusInKm=10
+### 3.1. Поиск в радиусе 10км от Сан-Хосе (Уже проверено ✅)
+GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.0833&radiusInKm=10
 
 ### 3.2. Доступные Провинции в радиусе 10км (Должна быть только San José)
-GET {{base_url}}/api/discovery/provinces?lat={{uLat}}&lon={{uLon}}&radiusInKm=10
+GET {{base_url}}/api/discovery/provinces?lat=9.9333&lon=-84.0833&radiusInKm=10
 
-### 3.3. Расширяем радиус до 100км -> Смотрим доступные Провинции (Теперь должны быть обе)
-GET {{base_url}}/api/discovery/provinces?lat={{uLat}}&lon={{uLon}}&radiusInKm=100
+### 3.3. Расширяем радиус до 100км -> Доступные Провинции (Должны появиться обе: SJ и Alajuela)
+GET {{base_url}}/api/discovery/provinces?lat=9.9333&lon=-84.0833&radiusInKm=100
 
-### 3.4. В радиусе 100км выбираем тег "Parking" -> Смотрим доступные Города
-# Должен остаться только Escazu, так как в Алахуэле у нас нет парковки в базе
-GET {{base_url}}/api/discovery/cities?lat={{uLat}}&lon={{uLon}}&radiusInKm=100&tagIds={{idParking}}
+### 3.4. В радиусе 100км выбираем тег "Parking" -> Доступные Города
+# Должен остаться только Escazú, так как в Алахуэле у нас нет заведений с парковкой
+GET {{base_url}}/api/discovery/cities?lat=9.9333&lon=-84.0833&radiusInKm=100&tagIds={{idParking}}
 
-### 3.5. В радиусе 100км смотрим теги (Должны быть все три: WiFi, Parking, Vegan)
-GET {{base_url}}/api/discovery/tags?lat={{uLat}}&lon={{uLon}}&radiusInKm=100
+### 3.5. Доступные теги в радиусе 100км (Должны быть все три: WiFi, Parking, Vegan)
+GET {{base_url}}/api/discovery/tags?lat=9.9333&lon=-84.0833&radiusInKm=100
 
-### 3.6. Поиск "Пицца с WiFi" в радиусе 100км от Сан-Хосе
-# Сортировка будет по дистанции: сначала SJ (0км), потом Alajuela (~70км)
-GET {{base_url}}/api/discovery/search?lat={{uLat}}&lon={{uLon}}&radiusInKm=100&tagIds={{idWiFi}} 
+### 3.6. Поиск "WiFi" в радиусе 100км (Сортировка по дистанции)
+# Первым должен быть SJ (~0км), вторым Alajuela (~70км)
+GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.0833&radiusInKm=100&tagIds={{idWiFi}}
