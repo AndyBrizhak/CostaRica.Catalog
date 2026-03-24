@@ -8,9 +8,6 @@ public record GeoPointDto(double Latitude, double Longitude);
 
 // --- ADMIN DTOs (Для React Admin) ---
 
-/// <summary>
-/// Полный DTO бизнес-страницы для админ-панели.
-/// </summary>
 public record BusinessPageResponseDto(
     Guid Id,
     bool IsPublished,
@@ -36,20 +33,17 @@ public record BusinessPageResponseDto(
     DateTimeOffset UpdatedAt
 );
 
-/// <summary>
-/// DTO для создания и обновления бизнес-страницы.
-/// </summary>
 public record BusinessPageUpsertDto(
     [Required] string Name,
-    string? Slug, // Если пустой, сервис сгенерирует автоматически
+    string? Slug,
     bool IsPublished,
-    string LanguageCode,
+    [Required] string LanguageCode,
     string? Description,
     [Required] Guid ProvinceId,
     Guid? CityId,
-    [Required] GeoPointDto Location,
     Guid? PrimaryCategoryId,
     List<Guid> SecondaryCategoryIds,
+    [Required] GeoPointDto Location,
     BusinessContacts Contacts,
     List<ScheduleDay> Schedule,
     BusinessSeoSettings Seo,
@@ -57,9 +51,6 @@ public record BusinessPageUpsertDto(
     List<Guid> MediaIds
 );
 
-/// <summary>
-/// Параметры запроса списка для React Admin.
-/// </summary>
 public record BusinessPageQueryParameters(
     int? _start = 0,
     int? _end = 10,
@@ -73,9 +64,6 @@ public record BusinessPageQueryParameters(
 
 // --- DISCOVERY DTOs (Для публичного фронтенда) ---
 
-/// <summary>
-/// Легкий DTO для карточки бизнеса в результатах поиска.
-/// </summary>
 public record BusinessPageCardDto(
     string Name,
     string Slug,
@@ -84,12 +72,9 @@ public record BusinessPageCardDto(
     string? ProvinceName,
     string? PrimaryCategoryName,
     GeoPointDto Location,
-    double? Distance // Заполняется только при гео-поиске
+    double? Distance
 );
 
-/// <summary>
-/// Ответ со списками доступных фильтров (Smart Availability).
-/// </summary>
 public record DiscoveryFiltersResponseDto(
     IEnumerable<ProvinceResponseDto> Provinces,
     IEnumerable<CityResponseDto> Cities,
@@ -97,7 +82,8 @@ public record DiscoveryFiltersResponseDto(
 );
 
 /// <summary>
-/// Универсальные параметры для публичного поиска.
+/// Параметры поиска. 
+/// Использование массива Guid[] вместо List позволяет Minimal API корректно биндить параметры из Query String.
 /// </summary>
 public record DiscoverySearchParams(
     Guid? ProvinceId = null,
@@ -105,7 +91,7 @@ public record DiscoverySearchParams(
     double? Lat = null,
     double? Lon = null,
     double? RadiusInKm = null,
-    List<Guid>? TagIds = null,
+    Guid[]? TagIds = null, // Заменено на массив для корректного маппинга
     int Page = 1,
-    int PageSize = 20
+    int PageSize = 10
 );
