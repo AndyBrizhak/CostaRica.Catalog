@@ -16,6 +16,7 @@ public record BusinessPageResponseDto(
     bool IsPublished,
     string Name,
     string Slug,
+    List<string> OldSlugs,
     string LanguageCode,
     string? Description,
     Guid ProvinceId,

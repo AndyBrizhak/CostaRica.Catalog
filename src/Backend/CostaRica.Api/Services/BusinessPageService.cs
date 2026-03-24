@@ -201,35 +201,38 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
     }
 
     private static BusinessPageResponseDto MapToDto(BusinessPage b) => new(
-        b.Id,
-        b.IsPublished,
-        b.Name,
-        b.Slug,
-        b.LanguageCode,
-        b.Description,
-        b.ProvinceId,
-        b.Province?.Name,
-        b.CityId,
-        b.City?.Name,
-        new GeoPointDto(b.Location.Y, b.Location.X),
-        b.PrimaryCategoryId,
-        b.PrimaryCategory?.NameEn,
-        b.Contacts,
-        b.Schedule,
-        b.Seo,
-        b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
-        b.Media.Select(m => new MediaAssetResponseDto(
-            m.Id,
-            m.Slug,
-            m.FileName,
-            m.ContentType,
-            m.AltTextEn,
-            m.AltTextEs,
-            $"/media/{m.FileName}", // Обязательное поле Url из MediaAssetDtos.cs
-            m.CreatedAt,
-            new List<Guid> { b.Id } // Обязательное поле RelatedBusinessIds из MediaAssetDtos.cs
-        )),
-        b.CreatedAt,
-        b.UpdatedAt
-    );
+    b.Id,
+    b.IsPublished,
+    b.Name,
+    b.Slug,
+    // --- ПЕРЕДАЙ ЗНАЧЕНИЕ ТУТ ---
+    b.OldSlugs,
+    // ----------------------------
+    b.LanguageCode,
+    b.Description,
+    b.ProvinceId,
+    b.Province?.Name,
+    b.CityId,
+    b.City?.Name,
+    new GeoPointDto(b.Location.Y, b.Location.X),
+    b.PrimaryCategoryId,
+    b.PrimaryCategory?.NameEn,
+    b.Contacts,
+    b.Schedule,
+    b.Seo,
+    b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
+    b.Media.Select(m => new MediaAssetResponseDto(
+        m.Id,
+        m.Slug,
+        m.FileName,
+        m.ContentType,
+        m.AltTextEn,
+        m.AltTextEs,
+        $"/media/{m.FileName}",
+        m.CreatedAt,
+        new List<Guid> { b.Id }
+    )),
+    b.CreatedAt,
+    b.UpdatedAt
+);
 }
