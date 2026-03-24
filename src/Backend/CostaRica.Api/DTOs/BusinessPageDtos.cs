@@ -26,6 +26,7 @@ public record BusinessPageResponseDto(
     GeoPointDto Location,
     Guid? PrimaryCategoryId,
     string? PrimaryCategoryName,
+    IEnumerable<GoogleCategoryResponseDto> SecondaryCategories,
     BusinessContacts Contacts,
     List<ScheduleDay> Schedule,
     BusinessSeoSettings Seo,

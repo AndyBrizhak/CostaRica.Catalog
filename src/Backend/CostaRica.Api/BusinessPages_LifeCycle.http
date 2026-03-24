@@ -1,0 +1,131 @@
+﻿@base_url = http://localhost:5046
+@contentType = application/json
+
+### 1. ПОДГОТОВКА: Создаем связи
+# @name createProvince
+POST {{base_url}}/api/provinces
+Content-Type: {{contentType}}
+
+{ "name": "Alajuela", "slug": "alajuela" }
+
+###
+@provinceId = {{createProvince.response.body.$.id}}
+
+# @name createCity
+POST {{base_url}}/api/cities
+Content-Type: {{contentType}}
+
+{ "name": "La Fortuna", "slug": "la-fortuna", "provinceId": "{{provinceId}}" }
+
+###
+@cityId = {{createCity.response.body.$.id}}
+
+# @name createCat1
+POST {{base_url}}/api/google-categories
+Content-Type: {{contentType}}
+
+{ "gcid": "hotel", "nameEn": "Hotel", "nameEs": "Hotel" }
+
+###
+@catHotelId = {{createCat1.response.body.$.id}}
+
+# @name createCat2
+POST {{base_url}}/api/google-categories
+Content-Type: {{contentType}}
+
+{ "gcid": "restaurant", "nameEn": "Restaurant", "nameEs": "Restaurante" }
+
+###
+@catRestId = {{createCat2.response.body.$.id}}
+
+
+############################################################
+### ЭТАП 1: СОЗДАНИЕ (С описанием и вторичной категорией)
+############################################################
+
+# @name createBusiness
+POST {{base_url}}/api/admin/business-pages
+Content-Type: {{contentType}}
+
+{
+  "name": "Volcano View Resort",
+  "slug": "volcano-view",
+  "isPublished": true,
+  "languageCode": "en",
+  "description": "Initial description: Beautiful resort near the volcano.",
+  "provinceId": "{{provinceId}}",
+  "cityId": "{{cityId}}",
+  "primaryCategoryId": "{{catHotelId}}",
+  "secondaryCategoryIds": ["{{catRestId}}"],
+  "location": { "latitude": 10.4709, "longitude": -84.6453 },
+  "contacts": { "phone": "+506 1234-5678" },
+  "schedule": [],
+  "seo": { "title": "Volcano View", "description": "SEO Desc", "keywords": "", "hreflangs": [] },
+  "tagIds": [],
+  "mediaIds": []
+}
+
+###
+@businessId = {{createBusiness.response.body.$.id}}
+
+
+############################################################
+### ЭТАП 2: ЧТЕНИЕ И ПРОВЕРКА (Read)
+############################################################
+
+# Проверяем, что в ответе есть:
+# 1. "description" с текстом
+# 2. "secondaryCategories" с объектом "Restaurant"
+GET {{base_url}}/api/admin/business-pages/{{businessId}}
+
+
+############################################################
+### ЭТАП 3: ОБНОВЛЕНИЕ (Update)
+############################################################
+
+# Меняем описание и удаляем вторичную категорию (делаем список пустым)
+PUT {{base_url}}/api/admin/business-pages/{{businessId}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Volcano View Resort & Spa",
+  "slug": "volcano-view-updated",
+  "isPublished": true,
+  "languageCode": "en",
+  "description": "UPDATED DESCRIPTION: Now with a luxury spa and hot springs!",
+  "provinceId": "{{provinceId}}",
+  "cityId": "{{cityId}}",
+  "primaryCategoryId": "{{catHotelId}}",
+  "secondaryCategoryIds": [], 
+  "location": { "latitude": 10.4709, "longitude": -84.6453 },
+  "contacts": { "phone": "+506 9999-9999" },
+  "schedule": [],
+  "seo": { "title": "Updated Spa", "description": "New SEO", "keywords": "", "hreflangs": [] },
+  "tagIds": [],
+  "mediaIds": []
+}
+
+
+############################################################
+### ЭТАП 4: ПРОВЕРКА ОБНОВЛЕНИЯ
+############################################################
+
+# Убеждаемся, что:
+# 1. Описание изменилось
+# 2. В secondaryCategories теперь пусто []
+# 3. В oldSlugs добавился "volcano-view"
+GET {{base_url}}/api/admin/business-pages/{{businessId}}
+
+
+############################################################
+### ЭТАП 5: УДАЛЕНИЕ (Delete)
+############################################################
+
+DELETE {{base_url}}/api/admin/business-pages/{{businessId}}
+
+
+############################################################
+### ЭТАП 6: ФИНАЛЬНАЯ ПРОВЕРКА (Должен быть 404)
+############################################################
+
+GET {{base_url}}/api/admin/business-pages/{{businessId}}

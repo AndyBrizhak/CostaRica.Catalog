@@ -18,6 +18,7 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             .Include(b => b.Province)
             .Include(b => b.City)
             .Include(b => b.PrimaryCategory)
+            .Include(b => b.SecondaryCategories) // Добавлено
             .AsQueryable();
 
         // 1. Фильтрация
@@ -78,6 +79,7 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             .Include(b => b.Province)
             .Include(b => b.City)
             .Include(b => b.PrimaryCategory)
+            .Include(b => b.SecondaryCategories) // Добавлено
             .Include(b => b.Tags)
             .Include(b => b.Media)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
@@ -201,38 +203,37 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
     }
 
     private static BusinessPageResponseDto MapToDto(BusinessPage b) => new(
-    b.Id,
-    b.IsPublished,
-    b.Name,
-    b.Slug,
-    // --- ПЕРЕДАЙ ЗНАЧЕНИЕ ТУТ ---
-    b.OldSlugs,
-    // ----------------------------
-    b.LanguageCode,
-    b.Description,
-    b.ProvinceId,
-    b.Province?.Name,
-    b.CityId,
-    b.City?.Name,
-    new GeoPointDto(b.Location.Y, b.Location.X),
-    b.PrimaryCategoryId,
-    b.PrimaryCategory?.NameEn,
-    b.Contacts,
-    b.Schedule,
-    b.Seo,
-    b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
-    b.Media.Select(m => new MediaAssetResponseDto(
-        m.Id,
-        m.Slug,
-        m.FileName,
-        m.ContentType,
-        m.AltTextEn,
-        m.AltTextEs,
-        $"/media/{m.FileName}",
-        m.CreatedAt,
-        new List<Guid> { b.Id }
-    )),
-    b.CreatedAt,
-    b.UpdatedAt
-);
+        b.Id,
+        b.IsPublished,
+        b.Name,
+        b.Slug,
+        b.OldSlugs,
+        b.LanguageCode,
+        b.Description,
+        b.ProvinceId,
+        b.Province?.Name,
+        b.CityId,
+        b.City?.Name,
+        new GeoPointDto(b.Location.Y, b.Location.X),
+        b.PrimaryCategoryId,
+        b.PrimaryCategory?.NameEn,
+        b.SecondaryCategories.Select(c => new GoogleCategoryResponseDto(c.Id, c.Gcid, c.NameEn, c.NameEs)), // Новое
+        b.Contacts,
+        b.Schedule,
+        b.Seo,
+        b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
+        b.Media.Select(m => new MediaAssetResponseDto(
+            m.Id,
+            m.Slug,
+            m.FileName,
+            m.ContentType,
+            m.AltTextEn,
+            m.AltTextEs,
+            $"/media/{m.FileName}",
+            m.CreatedAt,
+            new List<Guid> { b.Id }
+        )),
+        b.CreatedAt,
+        b.UpdatedAt
+    );
 }
