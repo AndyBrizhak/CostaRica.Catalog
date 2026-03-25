@@ -12,7 +12,7 @@ public static class AuthEndpoints
         var group = app.MapGroup("/api/auth")
             .WithTags("Authentication");
 
-        // Эндпоинт для входа в систему (уже есть)
+        // Вход в систему
         group.MapPost("/login", async (
             [FromBody] LoginRequest request,
             IIdentityService identityService) =>
@@ -33,10 +33,30 @@ public static class AuthEndpoints
         .WithName("Login")
         .WithOpenApi();
 
-        // НОВЫЙ ЭНДПОИНТ: Получение данных текущего пользователя
+        // Публичная регистрация (Автоматически назначает роль Viewer)
+        group.MapPost("/register", async (
+            [FromBody] RegisterRequest request,
+            IIdentityService identityService) =>
+        {
+            var result = await identityService.RegisterAsync(request, "Viewer");
+
+            if (!result.Success)
+            {
+                return Results.BadRequest(new { errors = result.Errors });
+            }
+
+            return Results.Ok(new
+            {
+                token = result.Token,
+                roles = result.Roles
+            });
+        })
+        .WithName("Register")
+        .WithOpenApi();
+
+        // Получение данных текущего пользователя из токена
         group.MapGet("/me", (ClaimsPrincipal user) =>
         {
-            // Извлекаем данные из Claims токена
             var id = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             var email = user.FindFirst(ClaimTypes.Email)?.Value;
             var roles = user.FindAll(ClaimTypes.Role).Select(r => r.Value);
@@ -48,7 +68,7 @@ public static class AuthEndpoints
                 roles
             });
         })
-        .RequireAuthorization() // ТРЕБУЕТ ТОКЕН
+        .RequireAuthorization()
         .WithName("GetCurrentUser")
         .WithOpenApi();
     }
