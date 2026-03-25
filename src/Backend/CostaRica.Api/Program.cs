@@ -199,6 +199,7 @@ if (!isEfTooling)
 
 // --- МАППИНГ ЭНДПОИНТОВ ---
 app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();
