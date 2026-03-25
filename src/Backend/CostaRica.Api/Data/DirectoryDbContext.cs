@@ -1,9 +1,12 @@
 ﻿using CostaRica.Api.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+
 
 namespace CostaRica.Api.Data;
 
-public class DirectoryDbContext : DbContext
+public class DirectoryDbContext : IdentityDbContext<ApplicationUser, IdentityRole<Guid>, Guid>
 {
     public DirectoryDbContext(DbContextOptions<DirectoryDbContext> options)
         : base(options)
