@@ -1,4 +1,5 @@
-﻿using CostaRica.Api.Data;
+﻿using System.Security.Claims;
+using CostaRica.Api.Data;
 using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,7 +12,7 @@ public static class AuthEndpoints
         var group = app.MapGroup("/api/auth")
             .WithTags("Authentication");
 
-        // Эндпоинт для входа в систему
+        // Эндпоинт для входа в систему (уже есть)
         group.MapPost("/login", async (
             [FromBody] LoginRequest request,
             IIdentityService identityService) =>
@@ -30,6 +31,25 @@ public static class AuthEndpoints
             });
         })
         .WithName("Login")
+        .WithOpenApi();
+
+        // НОВЫЙ ЭНДПОИНТ: Получение данных текущего пользователя
+        group.MapGet("/me", (ClaimsPrincipal user) =>
+        {
+            // Извлекаем данные из Claims токена
+            var id = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var email = user.FindFirst(ClaimTypes.Email)?.Value;
+            var roles = user.FindAll(ClaimTypes.Role).Select(r => r.Value);
+
+            return Results.Ok(new
+            {
+                id,
+                email,
+                roles
+            });
+        })
+        .RequireAuthorization() // ТРЕБУЕТ ТОКЕН
+        .WithName("GetCurrentUser")
         .WithOpenApi();
     }
 }
