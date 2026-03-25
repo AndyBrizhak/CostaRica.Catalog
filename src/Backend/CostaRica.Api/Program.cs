@@ -6,6 +6,10 @@ using Scalar.AspNetCore;
 using SixLabors.ImageSharp.Web.Caching;
 using SixLabors.ImageSharp.Web.DependencyInjection;
 using SixLabors.ImageSharp.Web.Providers;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 // ==================================================================================
 // [CRITICAL: DO NOT REMOVE] Блок совместимости для миграций EF Core и PostgreSQL.
@@ -38,6 +42,51 @@ else
         });
     });
 }
+
+// --- IDENTITY SETUP ---
+builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
+{
+    // Настройки требований к паролям
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 8;
+    options.Password.RequireNonAlphanumeric = false; // Упрощаем для удобства, если нужно
+    options.Password.RequireUppercase = true;
+    options.Password.RequireLowercase = true;
+
+    // Настройки уникальности
+    options.User.RequireUniqueEmail = true;
+
+    // Отключаем обязательное подтверждение аккаунта для начального этапа
+    options.SignIn.RequireConfirmedAccount = false;
+})
+.AddEntityFrameworkStores<DirectoryDbContext>()
+.AddDefaultTokenProviders();
+
+// --- AUTHENTICATION & JWT (Шаг 2.2) ---
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? "Development_Only_Key_Change_In_Production_At_Least_32_Chars";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"] ?? "CostaRica.Api",
+        ValidAudience = jwtSettings["Audience"] ?? "CostaRica.Catalog.Client",
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+        ClockSkew = TimeSpan.Zero // Токен протухает ровно в срок без задержек
+    };
+});
+
+builder.Services.AddAuthorization();
 
 // --- РЕГИСТРАЦИЯ СЕРВИСОВ ---
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
