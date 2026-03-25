@@ -26,6 +26,7 @@ public static class AuthEndpoints
 
             return Results.Ok(new
             {
+                id = result.UserId, // Поле для парсинга в .http файлах
                 token = result.Token,
                 roles = result.Roles
             });
@@ -33,7 +34,7 @@ public static class AuthEndpoints
         .WithName("Login")
         .WithOpenApi();
 
-        // Публичная регистрация (Автоматически назначает роль Viewer)
+        // Публичная регистрация
         group.MapPost("/register", async (
             [FromBody] RegisterRequest request,
             IIdentityService identityService) =>
@@ -47,6 +48,7 @@ public static class AuthEndpoints
 
             return Results.Ok(new
             {
+                id = result.UserId, // Поле для парсинга в .http файлах
                 token = result.Token,
                 roles = result.Roles
             });
@@ -54,7 +56,7 @@ public static class AuthEndpoints
         .WithName("Register")
         .WithOpenApi();
 
-        // Получение данных текущего пользователя из токена
+        // Получение данных профиля
         group.MapGet("/me", (ClaimsPrincipal user) =>
         {
             var id = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;

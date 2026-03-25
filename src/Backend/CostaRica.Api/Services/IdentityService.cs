@@ -36,7 +36,7 @@ public class IdentityService : IIdentityService
         var roles = await _userManager.GetRolesAsync(user);
         var token = GenerateJwtToken(user, roles);
 
-        return AuthResult.Ok(token, roles);
+        return AuthResult.Ok(user.Id, token, roles);
     }
 
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, string role)
@@ -63,11 +63,10 @@ public class IdentityService : IIdentityService
 
         await _userManager.AddToRoleAsync(user, role);
 
-        // Для регистрации сразу возвращаем токен, чтобы пользователю не нужно было логиниться
         var roles = new[] { role };
         var token = GenerateJwtToken(user, roles);
 
-        return AuthResult.Ok(token, roles);
+        return AuthResult.Ok(user.Id, token, roles);
     }
 
     public async Task<bool> AnyUserExistsAsync()
@@ -89,7 +88,6 @@ public class IdentityService : IIdentityService
             new(ClaimTypes.NameIdentifier, user.Id.ToString())
         };
 
-        // Добавляем роли в клеймы токена
         foreach (var role in roles)
         {
             claims.Add(new Claim(ClaimTypes.Role, role));
@@ -98,7 +96,7 @@ public class IdentityService : IIdentityService
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddDays(7), // Токен на 7 дней
+            Expires = DateTime.UtcNow.AddDays(7),
             Issuer = jwtSettings["Issuer"],
             Audience = jwtSettings["Audience"],
             SigningCredentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256Signature)

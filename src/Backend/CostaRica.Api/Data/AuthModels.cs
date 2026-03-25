@@ -6,7 +6,7 @@
 public record LoginRequest(string Email, string Password);
 
 /// <summary>
-/// Запрос на регистрацию нового администратора/менеджера.
+/// Запрос на регистрацию нового пользователя.
 /// </summary>
 public record RegisterRequest(string Email, string Password, string UserName);
 
@@ -16,13 +16,14 @@ public record RegisterRequest(string Email, string Password, string UserName);
 public record AuthResult
 {
     public bool Success { get; init; }
+    public Guid? UserId { get; init; } // Добавлено поле для ID
     public string? Token { get; init; }
     public IEnumerable<string>? Errors { get; init; }
     public IEnumerable<string>? Roles { get; init; }
 
-    // Статические методы для удобного создания ответов без throw
-    public static AuthResult Ok(string token, IEnumerable<string> roles) =>
-        new() { Success = true, Token = token, Roles = roles };
+    // Метод Ok теперь принимает userId
+    public static AuthResult Ok(Guid userId, string token, IEnumerable<string> roles) =>
+        new() { Success = true, UserId = userId, Token = token, Roles = roles };
 
     public static AuthResult Failure(IEnumerable<string> errors) =>
         new() { Success = false, Errors = errors };
