@@ -86,7 +86,21 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
-builder.Services.AddAuthorization();
+// --- AUTHORIZATION POLICIES (Step 2.3) ---
+builder.Services.AddAuthorization(options =>
+{
+    // Политика для полного контроля системы (Роли и критические настройки)
+    options.AddPolicy("SuperAdminOnly", policy =>
+        policy.RequireRole("SuperAdmin"));
+
+    // Политика для полного управления ресурсами (CRUD)
+    options.AddPolicy("AdminFullAccess", policy =>
+        policy.RequireRole("SuperAdmin", "Admin"));
+
+    // Политика для повседневных операций (Создание/Редактирование, но без удаления)
+    options.AddPolicy("ManagementAccess", policy =>
+        policy.RequireRole("SuperAdmin", "Admin", "Manager"));
+});
 
 // --- РЕГИСТРАЦИЯ СЕРВИСОВ ---
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
