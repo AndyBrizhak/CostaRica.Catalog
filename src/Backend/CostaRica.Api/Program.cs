@@ -112,6 +112,7 @@ builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
 builder.Services.AddScoped<IBusinessPageService, BusinessPageService>();
 builder.Services.AddScoped<IDiscoveryService, DiscoveryService>(); // [NEW] Сервис умного поиска
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
+builder.Services.AddScoped<IIdentityService, IdentityService>();
 
 // --- IMAGESHARP (Твоя исходная конфигурация) ---
 var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
