@@ -181,6 +181,9 @@ if (!isEfTooling)
                     logger.LogInformation("Соединение с БД установлено. Применение миграций...");
                     await db.Database.MigrateAsync();
                     logger.LogInformation("Миграции завершены.");
+                    logger.LogInformation("Запуск инициализации данных (Seeding)...");
+                    await DataSeeder.SeedIdentityAsync(services, builder.Configuration);
+                    logger.LogInformation("Инициализация данных завершена.");
                     break;
                 }
             }
