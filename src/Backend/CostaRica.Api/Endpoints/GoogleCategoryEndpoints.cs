@@ -9,9 +9,11 @@ public static class GoogleCategoryEndpoints
     public static void MapGoogleCategoryEndpoints(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/google-categories")
-            .WithTags("GoogleCategories");
+            .WithTags("GoogleCategories")
+            // УРОВЕНЬ 1: Доступ только для персонала (Manager и выше)
+            .RequireAuthorization("ManagementAccess");
 
-        // GET / — Основной эндпоинт для React Admin (List, Search, GetMany)
+        // GET / — Просмотр списка (Доступно всем в ManagementAccess)
         group.MapGet("/", async (
             [AsParameters] GoogleCategoryQueryParameters args,
             IGoogleCategoryService service,
@@ -20,7 +22,6 @@ public static class GoogleCategoryEndpoints
         {
             var (items, totalCount) = await service.GetAllAsync(args, ct);
 
-            // Добавляем заголовки для корректной работы пагинации во фронтенде
             response.Headers.Append("X-Total-Count", totalCount.ToString());
             response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
@@ -28,7 +29,7 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategories");
 
-        // GET /{id} — Получение одной записи
+        // GET /{id} — Получение одной записи (Доступно всем в ManagementAccess)
         group.MapGet("/{id:guid}", async (Guid id, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var result = await service.GetByIdAsync(id, ct);
@@ -36,13 +37,15 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategoryById");
 
-        // GET /gcid/{gcid} — Поиск по техническому коду
+        // GET /gcid/{gcid} (Доступно всем в ManagementAccess)
         group.MapGet("/gcid/{gcid}", async (string gcid, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var result = await service.GetByGcidAsync(gcid, ct);
             return result is not null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("GetGoogleCategoryByGcid");
+
+        // --- МЕТОДЫ ТОЛЬКО ДЛЯ SUPER ADMIN ---
 
         // POST / — Создание одиночной категории
         group.MapPost("/", async (GoogleCategoryUpsertDto dto, IGoogleCategoryService service, CancellationToken ct) =>
@@ -53,6 +56,7 @@ public static class GoogleCategoryEndpoints
 
             return Results.Created($"/api/google-categories/{result.Id}", result);
         })
+        .RequireAuthorization("SuperAdminOnly")
         .WithName("CreateGoogleCategory");
 
         // POST /bulk — Массовый импорт
@@ -61,6 +65,7 @@ public static class GoogleCategoryEndpoints
             var count = await service.BulkImportAsync(categories, ct);
             return Results.Ok(new { ImportedCount = count });
         })
+        .RequireAuthorization("SuperAdminOnly")
         .WithName("BulkImportGoogleCategories");
 
         // PUT /{id} — Обновление
@@ -69,6 +74,7 @@ public static class GoogleCategoryEndpoints
             var updated = await service.UpdateAsync(id, dto, ct);
             return updated ? Results.NoContent() : Results.NotFound();
         })
+        .RequireAuthorization("SuperAdminOnly")
         .WithName("UpdateGoogleCategory");
 
         // DELETE /{id} — Удаление
@@ -77,6 +83,7 @@ public static class GoogleCategoryEndpoints
             var deleted = await service.DeleteAsync(id, ct);
             return deleted ? Results.NoContent() : Results.NotFound();
         })
+        .RequireAuthorization("SuperAdminOnly")
         .WithName("DeleteGoogleCategory");
     }
 }
