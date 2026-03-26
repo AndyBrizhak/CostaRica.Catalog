@@ -1,100 +1,87 @@
 ﻿@base_url = http://localhost:5046
-@slug = test-sunset-beach
+@contentType = application/json
 
-# 1. ЗАГРУЗКА (CREATE)
+### 1. АВТОРИЗАЦИЯ (SUPER ADMIN)
+# @name loginAdmin
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
+}
+
+###
+@adminToken = {{loginAdmin.response.body.$.token}}
+
+### 2. АУДИТ И ОЧИСТКА (ВЫПОЛНЯЕТ SUPER ADMIN)
+
+# 2.1. Получить список всех ассетов
+# Выполни этот запрос, чтобы увидеть текущие ID и Slug в базе
+# @name getList
+GET {{base_url}}/media
+Authorization: Bearer {{adminToken}}
+
+###
+
+# 2.2. Удаление конкретного ассета
+# Сюда нужно вставить ID из ответа выше, чтобы очистить базу перед тестом
+DELETE {{base_url}}/media/f7eeb28c-c031-446e-a5f1-ca9611f92175
+
+Authorization: Bearer {{adminToken}}
+
+
+### 3. АВТОРИЗАЦИЯ (MANAGER)
+# @name loginManager
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "manager-tags@example.com",
+  "password": "Password123!"
+}
+
+###
+@managerToken = {{loginManager.response.body.$.token}}
+
+
+### 4. ЦИКЛ ТЕСТИРОВАНИЯ МЕНЕДЖЕРА
+
+# 4.1. Создание нового ассета
 # @name uploadMedia
 POST {{base_url}}/media/upload
+Authorization: Bearer {{managerToken}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
 --WebAppBoundary
 Content-Disposition: form-data; name="slug"
 
-{{slug}}
+security-test-image
 --WebAppBoundary
 Content-Disposition: form-data; name="altTextEn"
 
-Beautiful sunset at the beach
+Initial Alt Text
 --WebAppBoundary
-Content-Disposition: form-data; name="altTextEs"
-
-Hermoso atardecer en la playa
---WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="test_image.png"
+Content-Disposition: form-data; name="file"; filename="test.png"
 Content-Type: image/png
 
 < ./test_input.png
 --WebAppBoundary--
 
 ###
+@newAssetId = {{uploadMedia.response.body.$.id}}
 
-@asset_id = {{uploadMedia.response.body.$.id}}
-
-# 2. ПОЛУЧЕНИЕ СПИСКА (REACT ADMIN STANDARDS)
-
-# 2.1. Получить все (по умолчанию CreatedAt DESC)
-GET {{base_url}}/media
-
-###
-
-# 2.2. Пагинация (первые 5 элементов)
-# Проверь заголовок X-Total-Count в ответе
-GET {{base_url}}/media?_start=0&_end=5
-
-###
-
-# 2.3. Сортировка по слагу (ASC)
-GET {{base_url}}/media?_sort=Slug&_order=ASC
-
-###
-
-# 2.4. Полнотекстовый поиск (по слагу, альтам или имени файла)
-GET {{base_url}}/media?q=sunset
-
-###
-
-# 2.5. Фильтр "Сироты" (только не привязанные к бизнесу)
-GET {{base_url}}/media?onlyOrphans=true
-
-###
-
-# 2.6. Получение нескольких по ID (GET_MANY)
-GET {{base_url}}/media?id={{asset_id}}
-
-###
-
-
-# 3. ПОЛУЧЕНИЕ ДЕТАЛЕЙ (GET BY ID & SEO)
-
-# 3.1. По ID (возвращает JSON)
-GET {{base_url}}/media/{{asset_id}}
-
-###
-
-# 3.2. SEO URL (возвращает физический файл)
-GET {{base_url}}/media/{{asset_id}}/{{slug}}
-
-###
-
-# 3.3. SEO Redirect (проверка 301 редиректа при старом слаге)
-# Должен перенаправить на /media/{{asset_id}}/{{slug}}
-GET {{base_url}}/media/{{asset_id}}/old-wrong-slug
-
-###
-
-
-# 4. ОБНОВЛЕНИЕ (UPDATE)
-PUT {{base_url}}/media/{{asset_id}}
-Content-Type: application/json
+### 4.2. Обновление метаданных (PUT)
+# Проверка, что менеджер может менять ассет
+PUT {{base_url}}/media/{{newAssetId}}
+Authorization: Bearer {{managerToken}}
+Content-Type: {{contentType}}
 
 {
-  "slug": "updated-sunset-beach",
-  "altTextEn": "Updated English Alt",
-  "altTextEs": "Texto alternativo actualizado"
+  "altTextEn": "Updated by Manager",
+  "altTextEs": "Actualizado por el gerente"
 }
 
-###
-
-
-# 5. УДАЛЕНИЕ (DELETE)
-# Файл удалится только если он не привязан к бизнесу
-DELETE {{base_url}}/media/{{asset_id}}
+### 4.3. Попытка удаления менеджером (Ожидается 403)
+DELETE {{base_url}}/media/{{newAssetId}}
+Authorization: Bearer {{managerToken}}

@@ -113,22 +113,44 @@ public class MediaAssetService(
 
     public async Task<MediaAssetResponseDto?> UpdateMetadataAsync(Guid id, MediaUpdateDto dto, CancellationToken ct = default)
     {
-        var asset = await db.MediaAssets.FirstOrDefaultAsync(m => m.Id == id, ct);
-        if (asset == null) return null;
-
-        // Если слаг меняется, проверяем его уникальность среди других записей
-        if (asset.Slug != dto.Slug)
+        try
         {
-            var exists = await db.MediaAssets.AnyAsync(m => m.Slug == dto.Slug && m.Id != id, ct);
-            if (exists) return null;
+            var asset = await db.MediaAssets.FirstOrDefaultAsync(m => m.Id == id, ct);
+            if (asset == null) return null;
+
+            // 1. Обновляем Slug только если он явно передан и не является пустым.
+            // Это защищает от ошибки PostgresException 23502 (NOT NULL violation).
+            if (!string.IsNullOrWhiteSpace(dto.Slug) && asset.Slug != dto.Slug)
+            {
+                var exists = await db.MediaAssets.AnyAsync(m => m.Slug == dto.Slug && m.Id != id, ct);
+                if (exists) return null; // Возвращаем null, если новый слаг уже занят
+
+                asset.Slug = dto.Slug;
+            }
+
+            // 2. Обновляем метаданные только если они переданы (не равны null).
+            // Если поле отсутствует в JSON, оно будет null в DTO, и мы его игнорируем,
+            // сохраняя текущее значение в базе данных.
+            if (dto.AltTextEn != null)
+            {
+                asset.AltTextEn = dto.AltTextEn;
+            }
+
+            if (dto.AltTextEs != null)
+            {
+                asset.AltTextEs = dto.AltTextEs;
+            }
+
+            // 3. Сохранение изменений
+            await db.SaveChangesAsync(ct);
+            return MapToDto(asset);
         }
-
-        asset.Slug = dto.Slug;
-        asset.AltTextEn = dto.AltTextEn;
-        asset.AltTextEs = dto.AltTextEs;
-
-        await db.SaveChangesAsync(ct);
-        return MapToDto(asset);
+        catch (Exception)
+        {
+            // Все непредвиденные ошибки (например, проблемы со связью с БД) 
+            // обрабатываются внутри, возвращая null для безопасного завершения запроса.
+            return null;
+        }
     }
 
     public async Task<MediaDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default)
