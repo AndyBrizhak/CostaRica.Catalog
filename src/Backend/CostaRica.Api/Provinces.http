@@ -1,57 +1,125 @@
 ﻿@base_url = http://localhost:5046
+@contentType = application/json
 
-### 1. Создание всех 7 провинций (Сидирование)
-# @name createSanJose
-POST {{base_url}}/api/provinces
-Content-Type: application/json
+# 1. ТОКЕН СУПЕР-АДМИНА (Берем из начального логина)
+# @name loginSuperAdmin
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
 
 {
-  "name": "San José",
-  "slug": "san-jose"
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
 }
 
 ###
-POST {{base_url}}/api/provinces
-Content-Type: application/json
+@superAdminToken = {{loginSuperAdmin.response.body.$.token}}
+
+# 2. ПОДГОТОВКА МЕНЕДЖЕРА
+# @name registerManager
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
 
 {
-  "name": "Alajuela",
-  "slug": "alajuela"
+  "email": "manager-provinces@example.com",
+  "password": "Password123!",
+  "userName": "ProvinceManager"
 }
 
 ###
-POST {{base_url}}/api/provinces
-Content-Type: application/json
+@managerId = {{registerManager.response.body.$.id}}
+
+# Повышаем до менеджера (делает SuperAdmin)
+PUT {{base_url}}/api/admin/users/{{managerId}}/roles
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+[ "Manager" ]
+
+###
+# Логин менеджера для получения токена
+# @name loginManager
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
 
 {
-  "name": "Cartago",
-  "slug": "cartago"
+  "email": "manager-provinces@example.com",
+  "password": "Password123!"
 }
 
-### 2. Получение списка (Стандартный запрос)
+###
+@managerToken = {{loginManager.response.body.$.token}}
+
+# 3. ПОДГОТОВКА ЗРИТЕЛЯ (VIEWER)
+# @name registerViewer
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "viewer-provinces@example.com",
+  "password": "Password123!",
+  "userName": "ProvinceViewer"
+}
+
+###
+@viewerToken = {{registerViewer.response.body.$.token}}
+
+
+############################################################
+### СЦЕНАРИЙ 1: SUPER ADMIN (ПОЛНЫЙ ДОСТУП)
+############################################################
+
+# @name createProvAdmin
+POST {{base_url}}/api/provinces
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{ "name": "San José", "slug": "san-jose" }
+
+###
+@provId = {{createProvAdmin.response.body.$.id}}
+
+# Удаление (Разрешено)
+DELETE {{base_url}}/api/provinces/{{provId}}
+Authorization: Bearer {{superAdminToken}}
+
+
+############################################################
+### СЦЕНАРИЙ 2: MANAGER (СОЗДАНИЕ/ЧТЕНИЕ - ДА, УДАЛЕНИЕ - НЕТ)
+############################################################
+
+### 2.1 Создание (Должно быть успешно)
+# @name createProvManager
+POST {{base_url}}/api/provinces
+Authorization: Bearer {{managerToken}}
+Content-Type: {{contentType}}
+
+{ "name": "Alajuela", "slug": "alajuela" }
+
+###
+@provIdManager = {{createProvManager.response.body.$.id}}
+
+### 2.2 Чтение списка (Должно быть успешно)
+GET {{base_url}}/api/provinces
+Authorization: Bearer {{managerToken}}
+
+### 2.3 Удаление (Ожидается: 403 Forbidden)
+DELETE {{base_url}}/api/provinces/{{provIdManager}}
+Authorization: Bearer {{managerToken}}
+
+############################################################
+### СЦЕНАРИЙ 3: VIEWER / АНОНИМ (ПОЛНЫЙ БЛОК)
+############################################################
+
+### 3.1 Чтение списка Зрителем (Ожидается: 403 Forbidden)
+GET {{base_url}}/api/provinces
+Authorization: Bearer {{viewerToken}}
+
+### 3.2 Чтение списка Анонимом (Ожидается: 401 Unauthorized)
 GET {{base_url}}/api/provinces
 
-### 3. Тестирование функций для react-admin (Пагинация и Поиск)
+### 3.3 Попытка создания (Ожидается: 403 Forbidden)
+POST {{base_url}}/api/provinces
+Authorization: Bearer {{viewerToken}}
+Content-Type: {{contentType}}
 
-### 3.1 Поиск по строке "san" (должен вернуть San José)
-# Проверьте заголовок X-Total-Count в ответе
-GET {{base_url}}/api/provinces?searchTerm=san
-
-### 3.2 Пагинация: Первая страница, размер 2
-GET {{base_url}}/api/provinces?page=1&pageSize=2
-
-### 3.3 Пагинация: Вторая страница, размер 2
-GET {{base_url}}/api/provinces?page=2&pageSize=2
-
-### 3.4 Сортировка по Slug (по убыванию)
-GET {{base_url}}/api/provinces?sortBy=slug&isAscending=false
-
-### 3.5 Запрос с включением городов (если они есть в БД)
-GET {{base_url}}/api/provinces?includeCities=true
-
-### 4. Получение по ID (подставьте актуальный GUID из списка выше)
-@province_id = 419c13d2-0a7a-41e2-8c83-ab95ca95ff52
-GET {{base_url}}/api/provinces/{{province_id}}
-
-### 5. Получение по Slug
-GET {{base_url}}/api/provinces/slug/san-jose
+{ "name": "Cartago", "slug": "cartago" }
