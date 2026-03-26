@@ -33,36 +33,15 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
         if (!string.IsNullOrWhiteSpace(parameters.q))
         {
             var search = $"%{parameters.q}%";
-            query = query.Where(b => EF.Functions.ILike(b.Name, search) ||
-                                    EF.Functions.ILike(b.Slug, search));
+            query = query.Where(b => EF.Functions.ILike(b.Name, search) || (b.Description != null && EF.Functions.ILike(b.Description, search)));
         }
 
         var totalCount = await query.CountAsync(ct);
 
-        if (!string.IsNullOrWhiteSpace(parameters._sort))
-        {
-            var isAsc = parameters._order?.ToUpper() == "ASC";
-            query = parameters._sort.ToLower() switch
-            {
-                "name" => isAsc ? query.OrderBy(b => b.Name) : query.OrderByDescending(b => b.Name),
-                "createdat" => isAsc ? query.OrderBy(b => b.CreatedAt) : query.OrderByDescending(b => b.CreatedAt),
-                _ => query.OrderBy(b => b.Name)
-            };
-        }
-        else
-        {
-            query = query.OrderBy(b => b.Name);
-        }
-
-        if (parameters._start.HasValue && parameters._end.HasValue)
-        {
-            var take = parameters._end.Value - parameters._start.Value;
-            query = query.Skip(parameters._start.Value).Take(take);
-        }
-
         var items = await query
-            .Include(b => b.Tags)
-            .Include(b => b.Media)
+            .OrderBy(b => b.Name)
+            .Skip(parameters._start ?? 0)
+            .Take((parameters._end ?? 10) - (parameters._start ?? 0))
             .ToListAsync(ct);
 
         return (items.Select(MapToDto), totalCount);
@@ -80,19 +59,16 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             .Include(b => b.Media)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
 
-        return business != null ? MapToDto(business) : null;
+        return business is not null ? MapToDto(business) : null;
     }
 
     public async Task<BusinessPageResponseDto?> CreateAsync(BusinessPageUpsertDto dto, CancellationToken ct = default)
     {
-        var slug = string.IsNullOrWhiteSpace(dto.Slug)
-            ? GenerateSlug(dto.Name)
-            : dto.Slug.ToLowerInvariant();
+        var slug = string.IsNullOrWhiteSpace(dto.Slug) ? GenerateSlug(dto.Name) : dto.Slug;
 
-        if (await db.BusinessPages.AnyAsync(b => b.Slug == slug || b.OldSlugs.Contains(slug), ct))
+        if (await db.BusinessPages.AnyAsync(b => b.Slug == slug, ct))
         {
-            logger.LogWarning("Slug already exists: {Slug}", slug);
-            return null;
+            slug = $"{slug}-{Guid.NewGuid().ToString()[..4]}";
         }
 
         var business = new BusinessPage
@@ -114,14 +90,14 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
             UpdatedAt = DateTimeOffset.UtcNow
         };
 
-        if (dto.TagIds is { Count: > 0 })
+        if (dto.SecondaryCategoryIds?.Any() == true)
+            business.SecondaryCategories = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
+
+        if (dto.TagIds?.Any() == true)
             business.Tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
 
-        if (dto.MediaIds is { Count: > 0 })
+        if (dto.MediaIds?.Any() == true)
             business.Media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
-
-        if (dto.SecondaryCategoryIds is { Count: > 0 })
-            business.SecondaryCategories = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
 
         db.BusinessPages.Add(business);
         await db.SaveChangesAsync(ct);
@@ -132,52 +108,77 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
     public async Task<BusinessPageResponseDto?> UpdateAsync(Guid id, BusinessPageUpsertDto dto, CancellationToken ct = default)
     {
         var business = await db.BusinessPages
+            .Include(b => b.SecondaryCategories)
             .Include(b => b.Tags)
             .Include(b => b.Media)
-            .Include(b => b.SecondaryCategories)
             .FirstOrDefaultAsync(b => b.Id == id, ct);
 
         if (business == null) return null;
 
-        var newSlug = string.IsNullOrWhiteSpace(dto.Slug)
-            ? GenerateSlug(dto.Name)
-            : dto.Slug.ToLowerInvariant();
-
-        if (business.Slug != newSlug)
+        if (!string.IsNullOrWhiteSpace(dto.Slug) && business.Slug != dto.Slug)
         {
-            if (await db.BusinessPages.AnyAsync(b => b.Id != id && (b.Slug == newSlug || b.OldSlugs.Contains(newSlug)), ct))
-                return null;
+            var isSlugTaken = await db.BusinessPages.AnyAsync(b => b.Slug == dto.Slug && b.Id != id, ct);
+            if (!isSlugTaken)
+            {
+                if (!business.OldSlugs.Contains(business.Slug))
+                    business.OldSlugs.Add(business.Slug);
 
-            if (!business.OldSlugs.Contains(business.Slug))
-                business.OldSlugs.Add(business.Slug);
-
-            business.Slug = newSlug;
+                business.Slug = dto.Slug;
+            }
         }
 
         business.Name = dto.Name;
         business.IsPublished = dto.IsPublished;
         business.LanguageCode = dto.LanguageCode;
         business.Description = dto.Description;
-        business.ProvinceId = dto.ProvinceId;
-        business.CityId = dto.CityId;
-        business.PrimaryCategoryId = dto.PrimaryCategoryId;
+        business.UpdatedAt = DateTimeOffset.UtcNow;
+
+        if (business.ProvinceId != dto.ProvinceId)
+        {
+            if (await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId, ct))
+                business.ProvinceId = dto.ProvinceId;
+        }
+
+        if (dto.CityId.HasValue)
+        {
+            if (await db.Cities.AnyAsync(c => c.Id == dto.CityId.Value, ct))
+                business.CityId = dto.CityId;
+        }
+        else business.CityId = null;
+
+        if (dto.PrimaryCategoryId.HasValue)
+        {
+            if (await db.GoogleCategories.AnyAsync(c => c.Id == dto.PrimaryCategoryId.Value, ct))
+                business.PrimaryCategoryId = dto.PrimaryCategoryId;
+        }
+        else business.PrimaryCategoryId = null;
+
         business.Location = _geometryFactory.CreatePoint(new Coordinate(dto.Location.Longitude, dto.Location.Latitude));
+
         business.Contacts = dto.Contacts;
         business.Schedule = dto.Schedule;
         business.Seo = dto.Seo;
-        business.UpdatedAt = DateTimeOffset.UtcNow;
-
-        business.Tags.Clear();
-        if (dto.TagIds is { Count: > 0 })
-            business.Tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
-
-        business.Media.Clear();
-        if (dto.MediaIds is { Count: > 0 })
-            business.Media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
 
         business.SecondaryCategories.Clear();
-        if (dto.SecondaryCategoryIds is { Count: > 0 })
-            business.SecondaryCategories = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
+        if (dto.SecondaryCategoryIds?.Any() == true)
+        {
+            var cats = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
+            foreach (var cat in cats) business.SecondaryCategories.Add(cat);
+        }
+
+        business.Tags.Clear();
+        if (dto.TagIds?.Any() == true)
+        {
+            var tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
+            foreach (var tag in tags) business.Tags.Add(tag);
+        }
+
+        business.Media.Clear();
+        if (dto.MediaIds?.Any() == true)
+        {
+            var media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
+            foreach (var m in media) business.Media.Add(m);
+        }
 
         await db.SaveChangesAsync(ct);
         return await GetByIdAsync(business.Id, ct);
@@ -198,7 +199,6 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
         return name.ToLowerInvariant()
             .Replace(" ", "-")
             .Replace("&", "and")
-            // ИСПРАВЛЕНО: Используем символ '-' вместо строки "-"
             .Where(c => char.IsLetterOrDigit(c) || c == '-')
             .Aggregate("", (s, c) => s + c);
     }
@@ -210,8 +210,22 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
         b.PrimaryCategoryId, b.PrimaryCategory?.NameEn,
         b.SecondaryCategories.Select(c => new GoogleCategoryResponseDto(c.Id, c.Gcid, c.NameEn, c.NameEs)),
         b.Contacts, b.Schedule, b.Seo,
+
+        // ИСПРАВЛЕНО: передаем t.TagGroupId вместо null
         b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
-        b.Media.Select(m => new MediaAssetResponseDto(m.Id, m.Slug, m.FileName, m.ContentType, m.AltTextEn, m.AltTextEs, $"/media/{m.FileName}", m.CreatedAt, new List<Guid> { b.Id })),
+
+        b.Media.Select(m => new MediaAssetResponseDto(
+            m.Id,
+            m.Slug,
+            m.FileName,
+            m.ContentType,
+            m.AltTextEn,
+            m.AltTextEs,
+            $"/media/{m.Id}/{m.Slug}",
+            m.CreatedAt,
+            m.BusinessPages.Select(bp => bp.Id)
+        )),
+
         b.CreatedAt, b.UpdatedAt
     );
 }
