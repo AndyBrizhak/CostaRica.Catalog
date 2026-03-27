@@ -9,19 +9,20 @@ public static class BusinessPagesEndpoints
     public static void MapBusinessPageEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/admin/business-pages")
-            .WithTags("Admin: Business Pages");
+            .WithTags("Admin: Business Pages")
+            // УРОВЕНЬ 1: Весь административный раздел доступен только персоналу (Manager+)
+            .RequireAuthorization("ManagementAccess");
 
-        // 1. Получение списка (GET) с поддержкой пагинации React Admin
+        // 1. Получение списка (GET)
         group.MapGet("/", async (
             [AsParameters] BusinessPageQueryParameters parameters,
             IBusinessPageService service,
             CancellationToken ct) =>
         {
             var (items, totalCount) = await service.GetAllAsync(parameters, ct);
-
-            // Используем метод расширения напрямую у IResult
             return Results.Ok(items).WithPaginationHeader(totalCount);
-        });
+        })
+        .WithName("GetBusinessPages");
 
         // 2. Получение одной страницы по ID (GET)
         group.MapGet("/{id:guid}", async (
@@ -42,11 +43,12 @@ public static class BusinessPagesEndpoints
         {
             var result = await service.CreateAsync(dto, ct);
             return result is not null
-                ? Results.CreatedAtRoute("GetBusinessPageById", new { id = result.Id }, result)
-                : Results.BadRequest("Не удалось создать страницу. Возможно, слаг уже занят.");
-        });
+                ? Results.Created($"/api/admin/business-pages/{result.Id}", result)
+                : Results.BadRequest("Ошибка при создании страницы (возможно, слаг уже занят)");
+        })
+        .WithName("CreateBusinessPage");
 
-        // 4. Обновление страницы (PUT)
+        // 4. Полное обновление страницы (PUT)
         group.MapPut("/{id:guid}", async (
             Guid id,
             BusinessPageUpsertDto dto,
@@ -55,7 +57,8 @@ public static class BusinessPagesEndpoints
         {
             var result = await service.UpdateAsync(id, dto, ct);
             return result is not null ? Results.Ok(result) : Results.NotFound();
-        });
+        })
+        .WithName("UpdateBusinessPage");
 
         // 5. Удаление страницы (DELETE)
         group.MapDelete("/{id:guid}", async (
@@ -65,11 +68,14 @@ public static class BusinessPagesEndpoints
         {
             var deleted = await service.DeleteAsync(id, ct);
             return deleted ? Results.NoContent() : Results.NotFound();
-        });
+        })
+        // УРОВЕНЬ 2: Удаление разрешено только пользователям с полными правами (Admin+)
+        .RequireAuthorization("AdminFullAccess")
+        .WithName("DeleteBusinessPage");
     }
 }
 
-// Вспомогательный класс для пагинации
+// Вспомогательный класс для пагинации (React Admin)
 public static class BusinessPaginationExtensions
 {
     public static IResult WithPaginationHeader(this IResult result, int totalCount)
@@ -82,11 +88,8 @@ internal class PaginationResult(IResult innerResult, int totalCount) : IResult
 {
     public async Task ExecuteAsync(HttpContext httpContext)
     {
-        // Добавляем заголовок количества записей
         httpContext.Response.Headers.Append("X-Total-Count", totalCount.ToString());
-        // Разрешаем фронтенду (CORS) видеть этот заголовок
         httpContext.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
-
         await innerResult.ExecuteAsync(httpContext);
     }
 }
