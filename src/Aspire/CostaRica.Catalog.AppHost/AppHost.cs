@@ -4,8 +4,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 
 var postgres = builder.AddPostgres("postgres")
     .WithImage("postgis/postgis")
-    .WithImageTag("15-3.3");
-
+    .WithImageTag("15-3.3")
+    .WithHostPort(5432);
 // Если в конфигурации есть флаг "SkipVolumes", не создаем том для БД. 
 if (builder.Configuration["SkipVolumes"] != "true")
 {

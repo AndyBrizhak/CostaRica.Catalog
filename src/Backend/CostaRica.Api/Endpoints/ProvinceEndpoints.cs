@@ -8,10 +8,13 @@ public static class ProvinceEndpoints
 {
     public static void MapProvinceEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/api/provinces").WithTags("Provinces");
+        var group = routes.MapGroup("/api/provinces")
+            .WithTags("Provinces")
+            // УРОВЕНЬ 1: Глобальный замок на всю группу. 
+            // Только Менеджеры, Админы и Супер-админы могут попасть сюда.
+            .RequireAuthorization("ManagementAccess");
 
-        // GET /api/provinces
-        // Поддержка поиска, пагинации и заголовка X-Total-Count для react-admin
+        // GET /api/provinces (Доступ: ManagementAccess)
         group.MapGet("/", async (
             [FromQuery] string? searchTerm,
             [FromQuery] int page = 1,
@@ -24,7 +27,6 @@ public static class ProvinceEndpoints
         {
             var (items, totalCount) = await service.GetAllAsync(searchTerm, page, pageSize, sortBy, isAscending, includeCities);
 
-            // Добавляем заголовки для react-admin
             response.Headers.Append("X-Total-Count", totalCount.ToString());
             response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
@@ -32,15 +34,15 @@ public static class ProvinceEndpoints
         })
         .WithName("GetProvinces");
 
-        // GET /api/provinces/{id}
-        group.MapGet("/{id:guid}", async (Guid id, IProvinceService service, [FromQuery] bool includeCities = false) =>
+        // GET /api/provinces/{id} (Доступ: ManagementAccess)
+        group.MapGet("/{id:guid}", async (Guid id, IProvinceService service) =>
         {
-            var result = await service.GetByIdAsync(id, includeCities);
+            var result = await service.GetByIdAsync(id);
             return result is not null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("GetProvinceById");
 
-        // GET /api/provinces/slug/{slug}
+        // GET /api/provinces/slug/{slug} (Доступ: ManagementAccess)
         group.MapGet("/slug/{slug}", async (string slug, IProvinceService service, [FromQuery] bool includeCities = false) =>
         {
             var result = await service.GetBySlugAsync(slug, includeCities);
@@ -48,7 +50,7 @@ public static class ProvinceEndpoints
         })
         .WithName("GetProvinceBySlug");
 
-        // POST /api/provinces
+        // POST /api/provinces (Доступ: ManagementAccess)
         group.MapPost("/", async (ProvinceUpsertDto dto, IProvinceService service) =>
         {
             var result = await service.CreateAsync(dto);
@@ -60,7 +62,7 @@ public static class ProvinceEndpoints
         })
         .WithName("CreateProvince");
 
-        // PUT /api/provinces/{id}
+        // PUT /api/provinces/{id} (Доступ: ManagementAccess)
         group.MapPut("/{id:guid}", async (Guid id, ProvinceUpsertDto dto, IProvinceService service) =>
         {
             var updated = await service.UpdateAsync(id, dto);
@@ -74,6 +76,9 @@ public static class ProvinceEndpoints
             var deleted = await service.DeleteAsync(id);
             return deleted ? Results.NoContent() : Results.NotFound();
         })
+        // УРОВЕНЬ 2: Дополнительное ограничение.
+        // Только Админы и Супер-админы могут удалять записи.
+        .RequireAuthorization("AdminFullAccess")
         .WithName("DeleteProvince");
     }
 }
