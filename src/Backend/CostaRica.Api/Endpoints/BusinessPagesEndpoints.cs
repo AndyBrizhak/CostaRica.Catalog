@@ -10,7 +10,6 @@ public static class BusinessPagesEndpoints
     {
         var group = app.MapGroup("/api/admin/business-pages")
             .WithTags("Admin: Business Pages")
-            // УРОВЕНЬ 1: Весь административный раздел доступен только персоналу (Manager+)
             .RequireAuthorization("ManagementAccess");
 
         // 1. Получение списка (GET)
@@ -35,28 +34,43 @@ public static class BusinessPagesEndpoints
         })
         .WithName("GetBusinessPageById");
 
-        // 3. Создание новой страницы (POST)
+        // 3. Создание новой страницы (POST) с обработкой конфликтов
         group.MapPost("/", async (
             BusinessPageUpsertDto dto,
             IBusinessPageService service,
             CancellationToken ct) =>
         {
-            var result = await service.CreateAsync(dto, ct);
-            return result is not null
-                ? Results.Created($"/api/admin/business-pages/{result.Id}", result)
-                : Results.BadRequest("Ошибка при создании страницы (возможно, слаг уже занят)");
+            var (result, conflictId, error) = await service.CreateAsync(dto, ct);
+
+            if (conflictId.HasValue)
+                return Results.Conflict(new { message = error, id = conflictId.Value });
+
+            if (result == null)
+                return Results.BadRequest(new { message = error ?? "Ошибка при создании страницы." });
+
+            return Results.Created($"/api/admin/business-pages/{result.Id}", result);
         })
         .WithName("CreateBusinessPage");
 
-        // 4. Полное обновление страницы (PUT)
+        // 4. Обновление страницы (PUT) с обработкой конфликтов
         group.MapPut("/{id:guid}", async (
             Guid id,
             BusinessPageUpsertDto dto,
             IBusinessPageService service,
             CancellationToken ct) =>
         {
-            var result = await service.UpdateAsync(id, dto, ct);
-            return result is not null ? Results.Ok(result) : Results.NotFound();
+            var (result, conflictId, error) = await service.UpdateAsync(id, dto, ct);
+
+            if (conflictId.HasValue)
+                return Results.Conflict(new { message = error, id = conflictId.Value });
+
+            if (result == null)
+            {
+                if (error == "Страница не найдена.") return Results.NotFound();
+                return Results.BadRequest(new { message = error ?? "Ошибка при обновлении страницы." });
+            }
+
+            return Results.Ok(result);
         })
         .WithName("UpdateBusinessPage");
 
@@ -69,15 +83,11 @@ public static class BusinessPagesEndpoints
             var deleted = await service.DeleteAsync(id, ct);
             return deleted ? Results.NoContent() : Results.NotFound();
         })
-        // УРОВЕНЬ 2: Удаление разрешено только пользователям с полными правами (Admin+)
         .RequireAuthorization("AdminFullAccess")
         .WithName("DeleteBusinessPage");
     }
-}
 
-// Вспомогательный класс для пагинации (React Admin)
-public static class BusinessPaginationExtensions
-{
+    // Вспомогательный метод для пагинации
     public static IResult WithPaginationHeader(this IResult result, int totalCount)
     {
         return new PaginationResult(result, totalCount);
