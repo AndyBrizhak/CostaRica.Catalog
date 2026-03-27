@@ -1,131 +1,262 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-### 1. ПОДГОТОВКА: Создаем связи
-# @name createProvince
-POST {{base_url}}/api/provinces
+############################################################
+### ЭТАП 1: ПОДГОТОВКА ПРАВ И ПОЛЬЗОВАТЕЛЕЙ (SUPER ADMIN)
+############################################################
+
+# 1.1 Вход как основной Super Admin
+# @name loginSuperAdmin
+POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
-{ "name": "Alajuela", "slug": "alajuela" }
+{
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
+}
+
+###
+@superAdminToken = {{loginSuperAdmin.response.body.$.token}}
+
+# 1.2 Регистрация нового менеджера
+# @name registerManager
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "e2e-manager@example.com",
+  "password": "Password123!",
+  "userName": "E2EManager"
+}
+
+###
+@newManagerId = {{registerManager.response.body.$.id}}
+
+# 1.3 Назначение роли Manager (Рабочий метод через PUT)
+PUT {{base_url}}/api/admin/users/{{newManagerId}}/roles
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+[ "Manager" ]
+
+
+############################################################
+### ЭТАП 2: СОЗДАНИЕ ИНФРАСТРУКТУРЫ (ОТ ИМЕНИ SUPER ADMIN)
+############################################################
+
+# 2.1 Создание Провинции
+# @name createProvince
+POST {{base_url}}/api/provinces
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{ "name": "E2E State", "slug": "e2e-state" }
 
 ###
 @provinceId = {{createProvince.response.body.$.id}}
 
+# 2.2 Создание Города
 # @name createCity
 POST {{base_url}}/api/cities
+Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
-{ "name": "La Fortuna", "slug": "la-fortuna", "provinceId": "{{provinceId}}" }
+{ "name": "E2E Capital", "slug": "e2e-capital", "provinceId": "{{provinceId}}" }
 
 ###
 @cityId = {{createCity.response.body.$.id}}
 
+# 2.3 Создание Группы тегов
+# @name createTagGroup
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{ "nameEn": "Features", "nameEs": "Características", "slug": "e2e-features" }
+
+###
+@tagGroupId = {{createTagGroup.response.body.$.id}}
+
+# 2.4 Создание Тега
+# @name createTag
+POST {{base_url}}/api/tags
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{ "nameEn": "Verified", "nameEs": "Verificado", "slug": "e2e-verified", "tagGroupId": "{{tagGroupId}}" }
+
+###
+@tagId = {{createTag.response.body.$.id}}
+
+# 2.5 Создание Категории Google 1 (ОСНОВНАЯ)
 # @name createCat1
 POST {{base_url}}/api/google-categories
+Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
-{ "gcid": "hotel", "nameEn": "Hotel", "nameEs": "Hotel" }
+{ "gcid": "e2e_primary", "nameEn": "Primary Category", "nameEs": "Categoría Primaria" }
 
 ###
-@catHotelId = {{createCat1.response.body.$.id}}
+@catId1 = {{createCat1.response.body.$.id}}
 
+# 2.6 Создание Категории Google 2 (ДОПОЛНИТЕЛЬНАЯ)
 # @name createCat2
 POST {{base_url}}/api/google-categories
+Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
-{ "gcid": "restaurant", "nameEn": "Restaurant", "nameEs": "Restaurante" }
+{ "gcid": "e2e_secondary", "nameEn": "Secondary Category", "nameEs": "Categoría Secundaria" }
 
 ###
-@catRestId = {{createCat2.response.body.$.id}}
+@catId2 = {{createCat2.response.body.$.id}}
+
+# 2.7 Загрузка Медиа
+# @name uploadMedia
+POST {{base_url}}/media/upload
+Authorization: Bearer {{superAdminToken}}
+Content-Type: multipart/form-data; boundary=E2EBoundary
+
+--E2EBoundary
+Content-Disposition: form-data; name="slug"
+
+e2e-test-photo
+--E2EBoundary
+Content-Disposition: form-data; name="file"; filename="test.png"
+Content-Type: image/png
+
+< ./test_input.png
+--E2EBoundary--
+
+###
+@mediaId = {{uploadMedia.response.body.$.id}}
 
 
 ############################################################
-### ЭТАП 1: СОЗДАНИЕ (С описанием и вторичной категорией)
+### ЭТАП 3: РАБОТА МЕНЕДЖЕРА (MANAGER)
 ############################################################
 
-# @name createBusiness
+# 3.0 Вход под новым Менеджером
+# @name loginManager
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "e2e-manager@example.com",
+  "password": "Password123!"
+}
+
+###
+@managerToken = {{loginManager.response.body.$.token}}
+
+# 3.1 Создание первой страницы
+# @name createPage1
 POST {{base_url}}/api/admin/business-pages
+Authorization: Bearer {{managerToken}}
 Content-Type: {{contentType}}
 
 {
-  "name": "Volcano View Resort",
-  "slug": "volcano-view",
+  "name": "E2E First Business",
   "isPublished": true,
   "languageCode": "en",
-  "description": "Initial description: Beautiful resort near the volcano.",
   "provinceId": "{{provinceId}}",
   "cityId": "{{cityId}}",
-  "primaryCategoryId": "{{catHotelId}}",
-  "secondaryCategoryIds": ["{{catRestId}}"],
-  "location": { "latitude": 10.4709, "longitude": -84.6453 },
-  "contacts": { "phone": "+506 1234-5678" },
+  "primaryCategoryId": "{{catId1}}",
+  "secondaryCategoryIds": ["{{catId2}}"],
+  "location": { "latitude": 10.0, "longitude": -84.0 },
+  "contacts": { "ownerName": "Manager One" },
+  "tagIds": ["{{tagId}}"],
+  "mediaIds": ["{{mediaId}}"],
   "schedule": [],
-  "seo": { "title": "Volcano View", "description": "SEO Desc", "keywords": "", "hreflangs": [] },
+  "seo": { "title": "SEO 1" }
+}
+
+###
+@pageId1 = {{createPage1.response.body.$.id}}
+
+# 3.2 Создание второй страницы
+# @name createPage2
+POST {{base_url}}/api/admin/business-pages
+Authorization: Bearer {{managerToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "E2E Second Business",
+  "isPublished": false,
+  "languageCode": "es",
+  "provinceId": "{{provinceId}}",
+  "cityId": "{{cityId}}",
+  "primaryCategoryId": "{{catId1}}",
+  "location": { "latitude": 11.0, "longitude": -85.0 },
+  "contacts": { "ownerName": "Manager Two" },
   "tagIds": [],
   "mediaIds": []
 }
 
 ###
-@businessId = {{createBusiness.response.body.$.id}}
+@pageId2 = {{createPage2.response.body.$.id}}
 
 
 ############################################################
-### ЭТАП 2: ЧТЕНИЕ И ПРОВЕРКА (Read)
+### ЭТАП 4: ПРОВЕРКА ПОИСКА И ФИЛЬТРАЦИИ
 ############################################################
 
-# Проверяем, что в ответе есть:
-# 1. "description" с текстом
-# 2. "secondaryCategories" с объектом "Restaurant"
-GET {{base_url}}/api/admin/business-pages/{{businessId}}
+# 4.1 Поиск по тексту
+GET {{base_url}}/api/admin/business-pages?q=E2E
+Authorization: Bearer {{managerToken}}
 
+###
 
-############################################################
-### ЭТАП 3: ОБНОВЛЕНИЕ (Update)
-############################################################
-
-# Меняем описание и удаляем вторичную категорию (делаем список пустым)
-PUT {{base_url}}/api/admin/business-pages/{{businessId}}
-Content-Type: {{contentType}}
-
-{
-  "name": "Volcano View Resort & Spa",
-  "slug": "volcano-view-updated",
-  "isPublished": true,
-  "languageCode": "en",
-  "description": "UPDATED DESCRIPTION: Now with a luxury spa and hot springs!",
-  "provinceId": "{{provinceId}}",
-  "cityId": "{{cityId}}",
-  "primaryCategoryId": "{{catHotelId}}",
-  "secondaryCategoryIds": [], 
-  "location": { "latitude": 10.4709, "longitude": -84.6453 },
-  "contacts": { "phone": "+506 9999-9999" },
-  "schedule": [],
-  "seo": { "title": "Updated Spa", "description": "New SEO", "keywords": "", "hreflangs": [] },
-  "tagIds": [],
-  "mediaIds": []
-}
+# 4.2 Фильтр по основной категории
+GET {{base_url}}/api/admin/business-pages?primaryCategoryId={{catId1}}
+Authorization: Bearer {{managerToken}}
 
 
 ############################################################
-### ЭТАП 4: ПРОВЕРКА ОБНОВЛЕНИЯ
+### ЭТАП 5: ПОЛНАЯ ОЧИСТКА (SUPER ADMIN)
 ############################################################
 
-# Убеждаемся, что:
-# 1. Описание изменилось
-# 2. В secondaryCategories теперь пусто []
-# 3. В oldSlugs добавился "volcano-view"
-GET {{base_url}}/api/admin/business-pages/{{businessId}}
+# 5.1 Удаление страниц
+DELETE {{base_url}}/api/admin/business-pages/{{pageId1}}
+Authorization: Bearer {{superAdminToken}}
+###
+DELETE {{base_url}}/api/admin/business-pages/{{pageId2}}
+Authorization: Bearer {{superAdminToken}}
 
+###
 
-############################################################
-### ЭТАП 5: УДАЛЕНИЕ (Delete)
-############################################################
+# 5.2 Удаление медиа
+DELETE {{base_url}}/media/{{mediaId}}
+Authorization: Bearer {{superAdminToken}}
 
-DELETE {{base_url}}/api/admin/business-pages/{{businessId}}
+###
 
+# 5.3 Удаление категорий
+DELETE {{base_url}}/api/google-categories/{{catId1}}
+Authorization: Bearer {{superAdminToken}}
+###
+DELETE {{base_url}}/api/google-categories/{{catId2}}
+Authorization: Bearer {{superAdminToken}}
 
-############################################################
-### ЭТАП 6: ФИНАЛЬНАЯ ПРОВЕРКА (Должен быть 404)
-############################################################
+###
 
-GET {{base_url}}/api/admin/business-pages/{{businessId}}
+# 5.4 Удаление тега и группы
+DELETE {{base_url}}/api/tags/{{tagId}}
+Authorization: Bearer {{superAdminToken}}
+###
+DELETE {{base_url}}/api/tag-groups/{{tagGroupId}}
+Authorization: Bearer {{superAdminToken}}
+
+###
+
+# 5.5 Удаление города и провинции
+DELETE {{base_url}}/api/cities/{{cityId}}
+Authorization: Bearer {{superAdminToken}}
+###
+DELETE {{base_url}}/api/provinces/{{provinceId}}
+Authorization: Bearer {{superAdminToken}}
+
+###
+
+# 5.6 Удаление менеджера
+DELETE {{base_url}}/api/admin/users/{{newManagerId}}
+Authorization: Bearer {{superAdminToken}}
