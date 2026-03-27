@@ -1,131 +1,165 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-### 1. ПОДГОТОВКА: Создаем связи
-# @name createProvince
+############################################################
+### ЭТАП 1: ПОДГОТОВКА (SUPER ADMIN)
+############################################################
+
+# 1.1 Вход как Super Admin
+# @name loginAdmin
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
+}
+
+###
+@adminToken = {{loginAdmin.response.body.$.token}}
+
+# 1.2 Создание инфраструктуры (Провинция, Категория)
+# @name createInfra
 POST {{base_url}}/api/provinces
+Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
-{ "name": "Alajuela", "slug": "alajuela" }
+{ "name": "Testing Region", "slug": "test-region" }
 
 ###
-@provinceId = {{createProvince.response.body.$.id}}
+@provinceId = {{createInfra.response.body.$.id}}
 
-# @name createCity
-POST {{base_url}}/api/cities
-Content-Type: {{contentType}}
-
-{ "name": "La Fortuna", "slug": "la-fortuna", "provinceId": "{{provinceId}}" }
-
-###
-@cityId = {{createCity.response.body.$.id}}
-
-# @name createCat1
+# @name createCat
 POST {{base_url}}/api/google-categories
+Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
-{ "gcid": "hotel", "nameEn": "Hotel", "nameEs": "Hotel" }
+{ "gcid": "test_cat", "nameEn": "Test Category", "nameEs": "Cat de prueba" }
 
 ###
-@catHotelId = {{createCat1.response.body.$.id}}
-
-# @name createCat2
-POST {{base_url}}/api/google-categories
-Content-Type: {{contentType}}
-
-{ "gcid": "restaurant", "nameEn": "Restaurant", "nameEs": "Restaurante" }
-
-###
-@catRestId = {{createCat2.response.body.$.id}}
+@catId = {{createCat.response.body.$.id}}
 
 
 ############################################################
-### ЭТАП 1: СОЗДАНИЕ (С описанием и вторичной категорией)
+### ЭТАП 2: ПРАВА ДОСТУПА (MANAGER)
 ############################################################
 
-# @name createBusiness
+# 2.1 Регистрация и назначение роли Manager
+# @name regManager
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
+
+{ "email": "manager-test@example.com", "password": "Password123!", "userName": "ManagerTester" }
+
+###
+@managerId = {{regManager.response.body.$.id}}
+
+# Назначаем роль от имени Админа
+PUT {{base_url}}/api/admin/users/{{managerId}}/roles
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+[ "Manager" ]
+
+###
+
+# 2.2 Вход под Менеджером
+# @name loginManager
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{ "email": "manager-test@example.com", "password": "Password123!" }
+
+###
+@managerToken = {{loginManager.response.body.$.token}}
+
+
+############################################################
+### ЭТАП 3: ТЕСТ ДУБЛИКАТОВ И СЛАГОВ (409 CONFLICT)
+############################################################
+
+# 3.1 Создание страницы (Оригинал)
+# @name createOriginal
 POST {{base_url}}/api/admin/business-pages
+Authorization: Bearer {{managerToken}}
 Content-Type: {{contentType}}
 
 {
-  "name": "Volcano View Resort",
-  "slug": "volcano-view",
+  "name": "Unique Business Name",
+  "slug": "unique-slug",
   "isPublished": true,
   "languageCode": "en",
-  "description": "Initial description: Beautiful resort near the volcano.",
   "provinceId": "{{provinceId}}",
-  "cityId": "{{cityId}}",
-  "primaryCategoryId": "{{catHotelId}}",
-  "secondaryCategoryIds": ["{{catRestId}}"],
-  "location": { "latitude": 10.4709, "longitude": -84.6453 },
-  "contacts": { "phone": "+506 1234-5678" },
-  "schedule": [],
-  "seo": { "title": "Volcano View", "description": "SEO Desc", "keywords": "", "hreflangs": [] },
-  "tagIds": [],
-  "mediaIds": []
+  "primaryCategoryId": "{{catId}}",
+  "location": { "latitude": 9.3, "longitude": 123.3 }
 }
 
 ###
-@businessId = {{createBusiness.response.body.$.id}}
+@pageId = {{createOriginal.response.body.$.id}}
 
-
-############################################################
-### ЭТАП 2: ЧТЕНИЕ И ПРОВЕРКА (Read)
-############################################################
-
-# Проверяем, что в ответе есть:
-# 1. "description" с текстом
-# 2. "secondaryCategories" с объектом "Restaurant"
-GET {{base_url}}/api/admin/business-pages/{{businessId}}
-
-
-############################################################
-### ЭТАП 3: ОБНОВЛЕНИЕ (Update)
-############################################################
-
-# Меняем описание и удаляем вторичную категорию (делаем список пустым)
-PUT {{base_url}}/api/admin/business-pages/{{businessId}}
+# 3.2 ТЕСТ КОНФЛИКТА: Попытка создать с ТЕМ ЖЕ слагом
+# Ожидается: 409 Conflict
+POST {{base_url}}/api/admin/business-pages
+Authorization: Bearer {{managerToken}}
 Content-Type: {{contentType}}
 
 {
-  "name": "Volcano View Resort & Spa",
-  "slug": "volcano-view-updated",
-  "isPublished": true,
-  "languageCode": "en",
-  "description": "UPDATED DESCRIPTION: Now with a luxury spa and hot springs!",
+  "name": "Another Name But Same Slug",
+  "slug": "unique-slug",
   "provinceId": "{{provinceId}}",
-  "cityId": "{{cityId}}",
-  "primaryCategoryId": "{{catHotelId}}",
-  "secondaryCategoryIds": [], 
-  "location": { "latitude": 10.4709, "longitude": -84.6453 },
-  "contacts": { "phone": "+506 9999-9999" },
-  "schedule": [],
-  "seo": { "title": "Updated Spa", "description": "New SEO", "keywords": "", "hreflangs": [] },
-  "tagIds": [],
-  "mediaIds": []
+  "location": { "latitude": 10.0, "longitude": 120.0 }
 }
 
+###
+
+# 3.3 ТЕСТ ИСТОРИИ: Смена слага и проверка OldSlugs
+# Мы меняем "unique-slug" на "new-cool-slug"
+PUT {{base_url}}/api/admin/business-pages/{{pageId}}
+Authorization: Bearer {{managerToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Unique Business Name",
+  "slug": "new-cool-slug",
+  "isPublished": true,
+  "provinceId": "{{provinceId}}",
+  "location": { "latitude": 9.3, "longitude": 123.3 }
+}
+
+###
+# Проверка: В ответе поле "oldSlugs" должно содержать ["unique-slug"]
+GET {{base_url}}/api/admin/business-pages/{{pageId}}
+Authorization: Bearer {{managerToken}}
+
 
 ############################################################
-### ЭТАП 4: ПРОВЕРКА ОБНОВЛЕНИЯ
+### ЭТАП 4: ТЕСТ УРОВНЕЙ ДОСТУПА (RBAC)
 ############################################################
 
-# Убеждаемся, что:
-# 1. Описание изменилось
-# 2. В secondaryCategories теперь пусто []
-# 3. В oldSlugs добавился "volcano-view"
-GET {{base_url}}/api/admin/business-pages/{{businessId}}
+# 4.1 ТЕСТ: Менеджер пытается УДАЛИТЬ страницу
+# Ожидается: 403 Forbidden (т.к. DELETE требует AdminFullAccess)
+DELETE {{base_url}}/api/admin/business-pages/{{pageId}}
+Authorization: Bearer {{managerToken}}
+
+###
+
+# 4.2 ТЕСТ: Админ успешно УДАЛЯЕТ страницу
+# Ожидается: 204 No Content
+DELETE {{base_url}}/api/admin/business-pages/{{pageId}}
+Authorization: Bearer {{adminToken}}
 
 
 ############################################################
-### ЭТАП 5: УДАЛЕНИЕ (Delete)
+### ЭТАП 5: ОЧИСТКА
 ############################################################
 
-DELETE {{base_url}}/api/admin/business-pages/{{businessId}}
+DELETE {{base_url}}/api/admin/users/{{managerId}}
+Authorization: Bearer {{adminToken}}
 
+###
+DELETE {{base_url}}/api/google-categories/{{catId}}
+Authorization: Bearer {{adminToken}}
 
-############################################################
-### ЭТАП 6: ФИНАЛЬНАЯ ПРОВЕРКА (Должен быть 404)
-############################################################
-
-GET {{base_url}}/api/admin/business-pages/{{businessId}}
+###
+DELETE {{base_url}}/api/provinces/{{provinceId}}
+Authorization: Bearer {{adminToken}}

@@ -8,17 +8,17 @@ public static class CitiesEndpoints
 {
     public static void MapCityEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/api/cities").WithTags("Cities");
+        var group = routes.MapGroup("/api/cities")
+            .WithTags("Cities")
+            // УРОВЕНЬ 1: Доступ только для персонала (Manager, Admin, SuperAdmin)
+            .RequireAuthorization("ManagementAccess");
 
         // GET /api/cities
-        // Поддержка пагинации, фильтрации и заголовка X-Total-Count
         group.MapGet("/", async ([AsParameters] CityQueryParameters @params, ICityService service, HttpContext context) =>
         {
             var (items, totalCount) = await service.GetAllAsync(@params);
 
-            // Добавляем заголовок для react-admin
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
-            // Разрешаем фронтенду читать этот заголовок (CORS)
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
             return Results.Ok(items);
@@ -73,6 +73,8 @@ public static class CitiesEndpoints
             var deleted = await service.DeleteAsync(id);
             return deleted ? Results.NoContent() : Results.NotFound();
         })
+        // УРОВЕНЬ 2: Удаление разрешено только Админам и выше
+        .RequireAuthorization("AdminFullAccess")
         .WithName("DeleteCity");
     }
 }

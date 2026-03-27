@@ -8,15 +8,11 @@ public static class TagEndpoints
 {
     public static void MapTagEndpoints(this IEndpointRouteBuilder app)
     {
+        // --- Группы тегов (Tag Groups) ---
         var tagGroups = app.MapGroup("/api/tag-groups")
             .WithTags("Tag Groups")
+            .RequireAuthorization("ManagementAccess") // Доступ: Manager+
             .WithOpenApi();
-
-        var tags = app.MapGroup("/api/tags")
-            .WithTags("Tags")
-            .WithOpenApi();
-
-        // --- Группы тегов (Tag Groups) ---
 
         tagGroups.MapGet("/", async (
             [AsParameters] TagGroupQueryParameters parameters,
@@ -26,7 +22,6 @@ public static class TagEndpoints
         {
             var (items, totalCount) = await service.GetAllAsync(parameters, ct);
 
-            // Установка заголовков для react-admin
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
@@ -38,15 +33,11 @@ public static class TagEndpoints
             await service.GetByIdAsync(id, ct) is { } tg ? Results.Ok(tg) : Results.NotFound())
             .WithName("GetTagGroupById");
 
-        tagGroups.MapGet("/slug/{slug}", async (string slug, ITagGroupService service, CancellationToken ct) =>
-            await service.GetBySlugAsync(slug, ct) is { } tg ? Results.Ok(tg) : Results.NotFound())
-            .WithName("GetTagGroupBySlug");
-
         tagGroups.MapPost("/", async (TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
         {
             var result = await service.CreateAsync(dto, ct);
             return result is null
-                ? Results.Conflict(new { error = $"Группа со слагом '{dto.Slug}' уже существует." })
+                ? Results.Conflict(new { error = "Группа с таким слагом уже существует." })
                 : Results.Created($"/api/tag-groups/{result.Id}", result);
         })
         .WithName("CreateTagGroup");
@@ -54,20 +45,21 @@ public static class TagEndpoints
         tagGroups.MapPut("/{id:guid}", async (Guid id, TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
         {
             var result = await service.UpdateAsync(id, dto, ct);
-            if (result is null)
-            {
-                var exists = await service.GetByIdAsync(id, ct);
-                return exists is null ? Results.NotFound() : Results.Conflict(new { error = "Конфликт слага при обновлении." });
-            }
-            return Results.Ok(result);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("UpdateTagGroup");
 
         tagGroups.MapDelete("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
             await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization("AdminFullAccess") // Удаление: Admin+
             .WithName("DeleteTagGroup");
 
+
         // --- Теги (Tags) ---
+        var tags = app.MapGroup("/api/tags")
+            .WithTags("Tags")
+            .RequireAuthorization("ManagementAccess") // Доступ: Manager+
+            .WithOpenApi();
 
         tags.MapGet("/", async (
             [AsParameters] TagQueryParameters parameters,
@@ -113,6 +105,7 @@ public static class TagEndpoints
 
         tags.MapDelete("/{id:guid}", async (Guid id, ITagService service, CancellationToken ct) =>
             await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization("AdminFullAccess") // Удаление: Admin+
             .WithName("DeleteTag");
     }
 }

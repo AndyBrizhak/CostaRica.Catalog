@@ -362,3 +362,6 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /src/media_storage
+/src/Backend/CostaRica.Api/appsettings.json
+/src/Backend/CostaRica.Api/test-auth.http
+/src/Backend/CostaRica.Api/Users_Hierarchy_LifeCycle.http

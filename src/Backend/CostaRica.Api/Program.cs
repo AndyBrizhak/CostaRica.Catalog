@@ -6,6 +6,10 @@ using Scalar.AspNetCore;
 using SixLabors.ImageSharp.Web.Caching;
 using SixLabors.ImageSharp.Web.DependencyInjection;
 using SixLabors.ImageSharp.Web.Providers;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
 
 // ==================================================================================
 // [CRITICAL: DO NOT REMOVE] Блок совместимости для миграций EF Core и PostgreSQL.
@@ -39,6 +43,65 @@ else
     });
 }
 
+// --- IDENTITY SETUP ---
+builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
+{
+    // Настройки требований к паролям
+    options.Password.RequireDigit = true;
+    options.Password.RequiredLength = 8;
+    options.Password.RequireNonAlphanumeric = false; // Упрощаем для удобства, если нужно
+    options.Password.RequireUppercase = true;
+    options.Password.RequireLowercase = true;
+
+    // Настройки уникальности
+    options.User.RequireUniqueEmail = true;
+
+    // Отключаем обязательное подтверждение аккаунта для начального этапа
+    options.SignIn.RequireConfirmedAccount = false;
+})
+.AddEntityFrameworkStores<DirectoryDbContext>()
+.AddDefaultTokenProviders();
+
+// --- AUTHENTICATION & JWT (Шаг 2.2) ---
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? "Development_Only_Key_Change_In_Production_At_Least_32_Chars";
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtSettings["Issuer"] ?? "CostaRica.Api",
+        ValidAudience = jwtSettings["Audience"] ?? "CostaRica.Catalog.Client",
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
+        ClockSkew = TimeSpan.Zero // Токен протухает ровно в срок без задержек
+    };
+});
+
+// --- AUTHORIZATION POLICIES (Step 2.3) ---
+builder.Services.AddAuthorization(options =>
+{
+    // Политика для полного контроля системы (Роли и критические настройки)
+    options.AddPolicy("SuperAdminOnly", policy =>
+        policy.RequireRole("SuperAdmin"));
+
+    // Политика для полного управления ресурсами (CRUD)
+    options.AddPolicy("AdminFullAccess", policy =>
+        policy.RequireRole("SuperAdmin", "Admin"));
+
+    // Политика для повседневных операций (Создание/Редактирование, но без удаления)
+    options.AddPolicy("ManagementAccess", policy =>
+        policy.RequireRole("SuperAdmin", "Admin", "Manager"));
+});
+
 // --- РЕГИСТРАЦИЯ СЕРВИСОВ ---
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
 builder.Services.AddScoped<ICityService, CityService>();
@@ -49,6 +112,7 @@ builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
 builder.Services.AddScoped<IBusinessPageService, BusinessPageService>();
 builder.Services.AddScoped<IDiscoveryService, DiscoveryService>(); // [NEW] Сервис умного поиска
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
+builder.Services.AddScoped<IIdentityService, IdentityService>();
 
 // --- IMAGESHARP (Твоя исходная конфигурация) ---
 var storagePath = builder.Configuration["Storage:LocalPath"] ?? "media";
@@ -117,6 +181,9 @@ if (!isEfTooling)
                     logger.LogInformation("Соединение с БД установлено. Применение миграций...");
                     await db.Database.MigrateAsync();
                     logger.LogInformation("Миграции завершены.");
+                    logger.LogInformation("Запуск инициализации данных (Seeding)...");
+                    await DataSeeder.SeedIdentityAsync(services, builder.Configuration);
+                    logger.LogInformation("Инициализация данных завершена.");
                     break;
                 }
             }
@@ -131,6 +198,8 @@ if (!isEfTooling)
 }
 
 // --- МАППИНГ ЭНДПОИНТОВ ---
+app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
 app.MapTagEndpoints();

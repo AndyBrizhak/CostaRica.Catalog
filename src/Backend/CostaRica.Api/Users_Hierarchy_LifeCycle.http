@@ -1,0 +1,140 @@
+@base_url = http://localhost:5046
+@contentType = application/json
+
+# Данные начального администратора из вашего DataSeeder/appsettings.json
+@initialAdminEmail = admin@example.com
+@initialAdminPassword = ComplexPassword123!
+
+### ============================================================
+### ШАГ 1: ПОЛУЧЕНИЕ ТОКЕНА НАЧАЛЬНОГО SUPERADMIN
+### ============================================================
+# @name loginSuperAdmin
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "{{initialAdminEmail}}",
+  "password": "{{initialAdminPassword}}"
+}
+
+###
+@superAdminToken = {{loginSuperAdmin.response.body.$.token}}
+@superAdminId = {{loginSuperAdmin.response.body.$.id}}
+
+### ============================================================
+### ШАГ 2: РЕГИСТРАЦИЯ ПЕРВОГО ПОЛЬЗОВАТЕЛЯ (VIEWER 1)
+### ============================================================
+# @name registerViewer1
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "viewer1@example.com",
+  "password": "Password123!",
+  "userName": "ViewerOne"
+}
+
+###
+@viewer1Id = {{registerViewer1.response.body.$.id}}
+
+### ------------------------------------------------------------
+### ШАГ 3: SUPERADMIN ПОВЫШАЕТ VIEWER 1 ДО ADMIN
+### ------------------------------------------------------------
+PUT {{base_url}}/api/admin/users/{{viewer1Id}}/roles
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+[ "Admin" ]
+
+### ------------------------------------------------------------
+### ШАГ 4: ЛОГИН НОВОГО АДМИНА (ДЛЯ ПОЛУЧЕНИЯ ЕГО ТОКЕНА)
+### ------------------------------------------------------------
+# @name loginAdmin1
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "viewer1@example.com",
+  "password": "Password123!"
+}
+
+###
+@admin1Token = {{loginAdmin1.response.body.$.token}}
+
+### ============================================================
+### ШАГ 5: РЕГИСТРАЦИЯ ВТОРОГО ПОЛЬЗОВАТЕЛЯ (VIEWER 2)
+### ============================================================
+# @name registerViewer2
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "viewer2@example.com",
+  "password": "Password123!",
+  "userName": "ViewerTwo"
+}
+
+###
+@viewer2Id = {{registerViewer2.response.body.$.id}}
+
+### ------------------------------------------------------------
+### ШАГ 6: SUPERADMIN НАЗНАЧАЕТ ЕМУ РОЛЬ MANAGER
+### ------------------------------------------------------------
+PUT {{base_url}}/api/admin/users/{{viewer2Id}}/roles
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+[ "Manager" ]
+
+### ============================================================
+### ШАГ 7: РЕГИСТРАЦИЯ ТРЕТЬЕГО ПОЛЬЗОВАТЕЛЯ (VIEWER 3)
+### ============================================================
+# @name registerViewer3
+POST {{base_url}}/api/auth/register
+Content-Type: {{contentType}}
+
+{
+  "email": "viewer3@example.com",
+  "password": "Password123!",
+  "userName": "ViewerThree"
+}
+
+###
+@viewer3Id = {{registerViewer3.response.body.$.id}}
+
+### ------------------------------------------------------------
+### ШАГ 8: АДМИН 1 (ПОВЫШЕННЫЙ ИЗ VIEWER 1) ДЕЛАЕТ VIEWER 3 МЕНЕДЖЕРОМ
+### (Проверка, что Админ может управлять теми, кто ниже его)
+### ------------------------------------------------------------
+PUT {{base_url}}/api/admin/users/{{viewer3Id}}/roles
+Authorization: Bearer {{admin1Token}}
+Content-Type: {{contentType}}
+
+[ "Manager" ]
+
+### ============================================================
+### ШАГ 9: ОПЕРАЦИИ УДАЛЕНИЯ И ПОНИЖЕНИЯ
+### ============================================================
+
+### 9.1. Админ 1 удаляет Менеджера (Viewer 3)
+DELETE {{base_url}}/api/admin/users/{{viewer3Id}}
+Authorization: Bearer {{admin1Token}}
+
+### 9.2. ТЕСТ: Админ 1 пытается удалить Супер-Админа (Ожидается: 403 Forbidden)
+DELETE {{base_url}}/api/admin/users/{{superAdminId}}
+Authorization: Bearer {{admin1Token}}
+
+### 9.3. Супер-Админ понижает Админа 1 до Viewer
+PUT {{base_url}}/api/admin/users/{{viewer1Id}}/roles
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+[ "Viewer" ]
+
+### 9.4. Супер-Админ удаляет бывшего Админа 1
+DELETE {{base_url}}/api/admin/users/{{viewer1Id}}
+Authorization: Bearer {{superAdminToken}}
+
+### 9.5. ТЕСТ: Супер-Админ пытается удалить самого себя (Ожидается: 403 Forbidden)
+DELETE {{base_url}}/api/admin/users/{{superAdminId}}
+Authorization: Bearer {{superAdminToken}}

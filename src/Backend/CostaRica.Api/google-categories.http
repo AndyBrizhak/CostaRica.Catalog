@@ -1,106 +1,56 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-# Используем уникальный префикс для сессии тестирования
-@temp_gcid = cat_{{$guid}}
-
-###
-# 1. СОЗДАНИЕ (CREATE)
-# @name createCategory
-POST {{base_url}}/api/google-categories
+### 1. Логин SuperAdmin
+# @name loginSuperAdmin
+POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
 {
-  "gcid": "{{temp_gcid}}",
-  "nameEn": "Dynamic Category",
-  "nameEs": "Categoría Dinámica"
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
 }
 
 ###
 
-# Захватываем ID и начальный GCID из ответа
-@categoryId = {{createCategory.response.body.$.id}}
-@initialGcid = {{createCategory.response.body.$.gcid}}
+# ПЕРЕМЕННЫЕ ВЫНОСИМ СТРОГО ПОСЛЕ РАЗДЕЛИТЕЛЯ ###
+@superAdminToken = {{loginSuperAdmin.response.body.$.token}}
 
-# 2. ПРОВЕРКА ПОСЛЕ СОЗДАНИЯ (GET BY INITIAL GCID)
-# Этот запрос должен вернуть 200 OK
-GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}
-Accept: {{contentType}}
-
-###
-
-# 3. ПОЛУЧЕНИЕ СПИСКА (REACT ADMIN STANDARDS)
-
-# 3.1. Получение с пагинацией и сортировкой
-GET {{base_url}}/api/google-categories?_start=0&_end=10&_sort=NameEn&_order=ASC
-Accept: {{contentType}}
-
-###
-
-# 3.2. Поиск (Query)
-GET {{base_url}}/api/google-categories?q={{initialGcid}}
-Accept: {{contentType}}
-
-###
-
-# 3.3. Получение группы по ID (GET_MANY)
-GET {{base_url}}/api/google-categories?id={{categoryId}}
-Accept: {{contentType}}
-
-###
-
-# 4. ОБНОВЛЕНИЕ (UPDATE)
-# Изменяем GCID, добавляя суффикс _updated
-PUT {{base_url}}/api/google-categories/{{categoryId}}
+### 2. Логин Менеджера
+# @name loginManager
+POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
 {
-  "gcid": "{{initialGcid}}_updated",
-  "nameEn": "Updated Category Name",
-  "nameEs": "Nombre Actualizado"
+  "email": "manager-tags@example.com",
+  "password": "Password123!"
 }
 
 ###
 
-# 5. ПРОВЕРКА ПОСЛЕ ОБНОВЛЕНИЯ
+@managerToken = {{loginManager.response.body.$.token}}
 
-# 5.1. Поиск по НОВОМУ GCID (Должен вернуть 200 OK)
-GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}_updated
-Accept: {{contentType}}
-
-###
-
-# 5.2. Поиск по СТАРОМУ GCID (Должен вернуть 404 Not Found, так как значение изменилось)
-GET {{base_url}}/api/google-categories/gcid/{{initialGcid}}
-Accept: {{contentType}}
-
-###
-
-# 6. МАССОВЫЙ ИМПОРТ (BULK)
+### 3. Массовый импорт (Тестовый)
+# @name bulkImport
 POST {{base_url}}/api/google-categories/bulk
+Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
 [
-  {
-    "gcid": "bulk_1_{{$guid}}",
-    "nameEn": "Bulk Category 1",
-    "nameEs": "Categoría Masiva 1"
-  },
-  {
-    "gcid": "bulk_2_{{$guid}}",
-    "nameEn": "Bulk Category 2",
-    "nameEs": "Categoría Masiva 2"
-  }
+  { "gcid": "bakery-test", "nameEn": "Bakery", "nameEs": "Panadería" },
+  { "gcid": "bar-test", "nameEn": "Bar", "nameEs": "Bar" }
 ]
 
-###
+### 4. Получение списка
+# @name getList
+GET {{base_url}}/api/google-categories?searchTerm=test
+Authorization: Bearer {{superAdminToken}}
 
-# 7. УДАЛЕНИЕ (DELETE)
-DELETE {{base_url}}/api/google-categories/{{categoryId}}
-Accept: {{contentType}}
+### 5. Удаление (Ручная вставка ID)
+# Выполни запрос выше, скопируй id и подставь его сюда
+DELETE {{base_url}}/api/google-categories/ВСТАВЬ_ID_ЗДЕСЬ
+Authorization: Bearer {{superAdminToken}}
 
-###
-
-# 8. ФИНАЛЬНАЯ ПРОВЕРКА (Должен вернуть 404)
-GET {{base_url}}/api/google-categories/{{categoryId}}
-Accept: {{contentType}}
+### 6. Проверка доступа Менеджера (Только чтение)
+GET {{base_url}}/api/google-categories
+Authorization: Bearer {{managerToken}}
