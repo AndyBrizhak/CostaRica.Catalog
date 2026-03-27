@@ -125,19 +125,66 @@ public class BusinessPageService(DirectoryDbContext db, ILogger<BusinessPageServ
 
         if (business == null) return null;
 
-        // На первом шаге сохраняем текущую логику обновления для совместимости
-        business.Name = dto.Name;
-        business.IsPublished = dto.IsPublished;
-        business.LanguageCode = dto.LanguageCode ?? "en";
-        business.Description = dto.Description;
-        business.ProvinceId = dto.ProvinceId;
-        business.CityId = dto.CityId;
-        business.PrimaryCategoryId = dto.PrimaryCategoryId;
+        // 1. SEO Менеджмент: управление историей слагов
+        if (!string.IsNullOrWhiteSpace(dto.Slug) && business.Slug != dto.Slug)
+        {
+            // Проверяем, нет ли уже такого слага у других (базовая проверка)
+            var isSlugTaken = await db.BusinessPages.AnyAsync(b => b.Slug == dto.Slug && b.Id != id, ct);
+            if (!isSlugTaken)
+            {
+                // Сохраняем старый слаг в историю, если его там еще нет
+                if (!business.OldSlugs.Contains(business.Slug))
+                    business.OldSlugs.Add(business.Slug);
 
-        business.Location = _geometryFactory.CreatePoint(new Coordinate(dto.Location.Longitude, dto.Location.Latitude));
-        business.Contacts = dto.Contacts ?? business.Contacts;
-        business.Schedule = dto.Schedule ?? business.Schedule;
-        business.Seo = dto.Seo ?? business.Seo;
+                business.Slug = dto.Slug;
+            }
+        }
+
+        // 2. Базовые поля: обновляем только если передано не null значение
+        if (dto.Name != null) business.Name = dto.Name;
+        if (dto.LanguageCode != null) business.LanguageCode = dto.LanguageCode;
+        if (dto.Description != null) business.Description = dto.Description;
+        business.IsPublished = dto.IsPublished;
+
+        // 3. Связи (Foreign Keys)
+        if (dto.ProvinceId != Guid.Empty) business.ProvinceId = dto.ProvinceId;
+        if (dto.CityId.HasValue) business.CityId = dto.CityId;
+        if (dto.PrimaryCategoryId.HasValue) business.PrimaryCategoryId = dto.PrimaryCategoryId;
+
+        // 4. Локация (PostGIS)
+        if (dto.Location != null)
+        {
+            business.Location = _geometryFactory.CreatePoint(new Coordinate(dto.Location.Longitude, dto.Location.Latitude));
+        }
+
+        // 5. JSONB Сложные типы (Owned Types)
+        // Если в DTO null — оставляем как было. Если пришел объект — заменяем.
+        if (dto.Contacts != null) business.Contacts = dto.Contacts;
+        if (dto.Seo != null) business.Seo = dto.Seo;
+        if (dto.Schedule != null) business.Schedule = dto.Schedule;
+
+        // 6. Синхронизация коллекций (Many-to-Many)
+        // Обновляем только если список ID был явно передан (не null)
+        if (dto.SecondaryCategoryIds != null)
+        {
+            business.SecondaryCategories.Clear();
+            var cats = await db.GoogleCategories.Where(c => dto.SecondaryCategoryIds.Contains(c.Id)).ToListAsync(ct);
+            foreach (var cat in cats) business.SecondaryCategories.Add(cat);
+        }
+
+        if (dto.TagIds != null)
+        {
+            business.Tags.Clear();
+            var tags = await db.Tags.Where(t => dto.TagIds.Contains(t.Id)).ToListAsync(ct);
+            foreach (var tag in tags) business.Tags.Add(tag);
+        }
+
+        if (dto.MediaIds != null)
+        {
+            business.Media.Clear();
+            var media = await db.MediaAssets.Where(m => dto.MediaIds.Contains(m.Id)).ToListAsync(ct);
+            foreach (var m in media) business.Media.Add(m);
+        }
 
         business.UpdatedAt = DateTimeOffset.UtcNow;
 
