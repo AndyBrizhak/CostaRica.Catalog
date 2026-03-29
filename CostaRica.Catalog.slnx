@@ -1,5 +1,8 @@
 <Solution>
   <Folder Name="/Mobile/" />
+  <Folder Name="/Solution Items/">
+    <File Path="README.md" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/Aspire/">
     <Project Path="src/Aspire/CostaRica.Catalog.AppHost/CostaRica.Catalog.AppHost.csproj" />
