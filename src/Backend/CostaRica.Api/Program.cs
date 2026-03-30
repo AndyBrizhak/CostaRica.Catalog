@@ -134,7 +134,7 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin()
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .WithExposedHeaders("X-Total-Count");
+              .WithExposedHeaders("X-Total-Count", "Content-Range");
     });
 });
 
@@ -151,6 +151,13 @@ app.UseImageSharp();
 app.MapDefaultEndpoints();
 app.UseStaticFiles();
 app.UseCors("AllowAll");
+
+// --- [FIX] Включаем механизмы безопасности ---
+// Сначала проверяем, КТО пришел (JWT токен)
+app.UseAuthentication();
+// Затем проверяем, ЧТО ему разрешено (Роли: Admin, SuperAdmin)
+app.UseAuthorization();
+// ----------------------------------------------
 
 // --- SWAGGER / SCALAR ---
 if (app.Environment.IsDevelopment())
