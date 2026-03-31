@@ -102,6 +102,9 @@ builder.Services.AddAuthorization(options =>
         policy.RequireRole("SuperAdmin", "Admin", "Manager"));
 });
 
+// Регистрация сервиса для управления пользователями
+builder.Services.AddScoped<IAdminUserService, AdminUserService>();
+
 // --- РЕГИСТРАЦИЯ СЕРВИСОВ ---
 builder.Services.AddScoped<IProvinceService, ProvinceService>();
 builder.Services.AddScoped<ICityService, CityService>();
