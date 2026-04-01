@@ -17,9 +17,11 @@ public class AdminUserService : IAdminUserService
 
     public async Task<(IEnumerable<object> Users, int TotalCount)> GetPagedUsersAsync(string? range, string? sort)
     {
+        // Получаем базовый запрос к пользователям
         var query = _userManager.Users.AsNoTracking();
         var totalCount = await query.CountAsync();
 
+        // Логика сортировки (оставляем как есть)
         if (!string.IsNullOrWhiteSpace(sort))
         {
             var sortParams = JsonSerializer.Deserialize<List<string>>(sort);
@@ -36,6 +38,7 @@ public class AdminUserService : IAdminUserService
             }
         }
 
+        // Логика пагинации (оставляем как есть)
         int start = 0;
         int end = 9;
         if (!string.IsNullOrWhiteSpace(range))
@@ -50,13 +53,30 @@ public class AdminUserService : IAdminUserService
 
         int limit = end - start + 1;
 
-        var users = await query
+        // 1. Сначала получаем список пользователей для текущей страницы
+        var userList = await query
             .Skip(start)
             .Take(limit)
-            .Select(u => new { u.Id, u.UserName, u.Email, u.EmailConfirmed })
             .ToListAsync();
 
-        return (users, totalCount);
+        // 2. Для каждого пользователя в списке запрашиваем роли через UserManager
+        var usersWithRoles = new List<object>();
+        foreach (var user in userList)
+        {
+            // Используем встроенный метод Identity для получения ролей
+            var roles = await _userManager.GetRolesAsync(user);
+
+            usersWithRoles.Add(new
+            {
+                user.Id,
+                user.UserName,
+                user.Email,
+                user.EmailConfirmed,
+                Roles = roles
+            });
+        }
+
+        return (usersWithRoles, totalCount);
     }
 
     public async Task<object?> GetUserByIdAsync(Guid id)
