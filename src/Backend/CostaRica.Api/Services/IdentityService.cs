@@ -44,7 +44,7 @@ public class IdentityService : IIdentityService
         var existingUser = await _userManager.FindByEmailAsync(request.Email);
         if (existingUser != null)
         {
-            return AuthResult.Failure("Пользователь с таким Email уже существует.");
+            return AuthResult.Failure("User with this email already exists.");
         }
 
         var user = new ApplicationUser
