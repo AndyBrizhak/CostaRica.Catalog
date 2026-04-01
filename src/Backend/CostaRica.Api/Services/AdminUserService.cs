@@ -18,11 +18,8 @@ public class AdminUserService : IAdminUserService
     public async Task<(IEnumerable<object> Users, int TotalCount)> GetPagedUsersAsync(string? range, string? sort)
     {
         var query = _userManager.Users.AsNoTracking();
-
-        // 1. Получаем общее количество до применения пагинации
         var totalCount = await query.CountAsync();
 
-        // 2. Обработка сортировки (например, ["email","ASC"])
         if (!string.IsNullOrWhiteSpace(sort))
         {
             var sortParams = JsonSerializer.Deserialize<List<string>>(sort);
@@ -30,7 +27,6 @@ public class AdminUserService : IAdminUserService
             {
                 var field = sortParams[0].ToLower();
                 var order = sortParams[1].ToUpper();
-
                 query = field switch
                 {
                     "email" => order == "ASC" ? query.OrderBy(u => u.Email) : query.OrderByDescending(u => u.Email),
@@ -40,7 +36,6 @@ public class AdminUserService : IAdminUserService
             }
         }
 
-        // 3. Обработка пагинации (например, [0,9])
         int start = 0;
         int end = 9;
         if (!string.IsNullOrWhiteSpace(range))
@@ -55,17 +50,10 @@ public class AdminUserService : IAdminUserService
 
         int limit = end - start + 1;
 
-        // 4. Финальная выборка данных
         var users = await query
             .Skip(start)
             .Take(limit)
-            .Select(u => new
-            {
-                u.Id,
-                u.UserName,
-                u.Email,
-                u.EmailConfirmed
-            })
+            .Select(u => new { u.Id, u.UserName, u.Email, u.EmailConfirmed })
             .ToListAsync();
 
         return (users, totalCount);
@@ -75,52 +63,77 @@ public class AdminUserService : IAdminUserService
     {
         var user = await _userManager.FindByIdAsync(id.ToString());
         if (user == null) return null;
-
         var roles = await _userManager.GetRolesAsync(user);
+        return new { user.Id, user.UserName, user.Email, user.EmailConfirmed, Roles = roles };
+    }
 
-        return new
+    public async Task<ServiceResult> UpdateUserRolesAsync(Guid id, string? email, string? userName, List<string> newRoles, ClaimsPrincipal actor)
+    {
+        var targetUser = await _userManager.FindByIdAsync(id.ToString());
+        if (targetUser == null) return ServiceResult.Failure("User not found", 404);
+
+        // 1. Проверка неизменности данных
+        if (!string.IsNullOrWhiteSpace(email))
         {
-            user.Id,
-            user.UserName,
-            user.Email,
-            user.EmailConfirmed,
-            Roles = roles
-        };
+            bool isEmailSame = string.Equals(targetUser.Email?.Trim(), email.Trim(), StringComparison.OrdinalIgnoreCase);
+            if (!isEmailSame) return ServiceResult.Failure("Update denied: Email modification is prohibited.", 400);
+        }
+
+        if (!string.IsNullOrWhiteSpace(userName))
+        {
+            bool isNameSame = string.Equals(targetUser.UserName?.Trim(), userName.Trim(), StringComparison.OrdinalIgnoreCase);
+            if (!isNameSame) return ServiceResult.Failure("Update denied: Username modification is prohibited.", 400);
+        }
+
+        // 2. Логика иерархии ролей
+        var actorRoles = actor.FindAll(ClaimTypes.Role).Select(r => r.Value);
+        var targetCurrentRoles = await _userManager.GetRolesAsync(targetUser);
+
+        int actorLevel = GetMaxRoleLevel(actorRoles);
+        int targetLevel = GetMaxRoleLevel(targetCurrentRoles);
+        int requestedLevel = GetMaxRoleLevel(newRoles);
+
+        if (actorLevel <= targetLevel)
+            return ServiceResult.Failure("Permission denied: You cannot modify a user with an equal or higher rank.", 403);
+
+        if (actorLevel <= requestedLevel)
+            return ServiceResult.Failure("Permission denied: You cannot assign a role equal to or higher than your own.", 403);
+
+        // 3. Обновление ролей
+        var removeResult = await _userManager.RemoveFromRolesAsync(targetUser, targetCurrentRoles);
+        if (!removeResult.Succeeded) return ServiceResult.Failure("Failed to clear existing roles.");
+
+        var addResult = await _userManager.AddToRolesAsync(targetUser, newRoles);
+        if (!addResult.Succeeded) return ServiceResult.Failure("Failed to assign new roles.");
+
+        return ServiceResult.Success();
     }
 
     public async Task<ServiceResult> DeleteUserAsync(Guid id, ClaimsPrincipal actor)
     {
         var targetUser = await _userManager.FindByIdAsync(id.ToString());
-        if (targetUser == null) return ServiceResult.Failure("Пользователь не найден", 404);
+        if (targetUser == null) return ServiceResult.Failure("User not found", 404);
 
-        // Проверка иерархии ролей (бизнес-логика защиты)
-        var actorRoles = actor.FindAll(ClaimTypes.Role).Select(r => r.Value);
-        var targetRoles = await _userManager.GetRolesAsync(targetUser);
-
-        var actorLevel = GetMaxRoleLevel(actorRoles);
-        var targetLevel = GetMaxRoleLevel(targetRoles);
+        var actorLevel = GetMaxRoleLevel(actor.FindAll(ClaimTypes.Role).Select(r => r.Value));
+        var targetLevel = GetMaxRoleLevel(await _userManager.GetRolesAsync(targetUser));
 
         if (actorLevel <= targetLevel)
-        {
-            return ServiceResult.Failure("Недостаточно прав для удаления пользователя с равным или более высоким рангом", 403);
-        }
+            return ServiceResult.Failure("Insufficient permissions to delete this user", 403);
 
         var result = await _userManager.DeleteAsync(targetUser);
-        return result.Succeeded
-            ? ServiceResult.Success()
-            : ServiceResult.Failure(string.Join(", ", result.Errors.Select(e => e.Description)));
+        return result.Succeeded ? ServiceResult.Success() : ServiceResult.Failure("Delete failed");
     }
 
     private static int GetMaxRoleLevel(IEnumerable<string> roles)
     {
-        if (!roles.Any()) return -1;
-        return roles.Max(role => role switch
+        if (roles == null || !roles.Any()) return -1;
+        return roles.Select(role => role switch
         {
             "SuperAdmin" => 3,
             "Admin" => 2,
             "Manager" => 1,
             "Viewer" => 0,
             _ => -1
-        });
+        }).DefaultIfEmpty(-1).Max();
     }
 }
