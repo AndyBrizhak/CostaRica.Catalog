@@ -8,21 +8,13 @@ namespace CostaRica.Api.Services;
 public interface IProvinceService
 {
     /// <summary>
-    /// Получить список провинций с поддержкой поиска, фильтрации и пагинации.
+    /// Получить список провинций с поддержкой поиска, фильтрации и пагинации (стандарт react-admin).
     /// </summary>
-    /// <param name="searchTerm">Строка поиска (по имени или слагу).</param>
-    /// <param name="page">Номер страницы (начиная с 1).</param>
-    /// <param name="pageSize">Количество записей на странице.</param>
-    /// <param name="sortBy">Поле для сортировки.</param>
-    /// <param name="isAscending">Направление сортировки.</param>
+    /// <param name="params">Параметры запроса (_start, _end, _sort, _order, Q).</param>
     /// <param name="includeCities">Флаг включения связанных городов.</param>
-    /// <returns>Кортеж, содержащий список провинций и общее количество записей, подходящих под условия поиска.</returns>
+    /// <returns>Кортеж, содержащий список провинций и общее количество записей.</returns>
     Task<(IEnumerable<ProvinceResponseDto> Items, int TotalCount)> GetAllAsync(
-        string? searchTerm = null,
-        int page = 1,
-        int pageSize = 10,
-        string? sortBy = null,
-        bool isAscending = true,
+        ProvinceQueryParameters @params,
         bool includeCities = false);
 
     Task<ProvinceResponseDto?> GetByIdAsync(Guid id, bool includeCities = false);
