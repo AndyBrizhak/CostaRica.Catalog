@@ -7,25 +7,21 @@ namespace CostaRica.Api.Services;
 public class ProvinceService(DirectoryDbContext db) : IProvinceService
 {
     public async Task<(IEnumerable<ProvinceResponseDto> Items, int TotalCount)> GetAllAsync(
-        string? searchTerm = null,
-        int page = 1,
-        int pageSize = 10,
-        string? sortBy = null,
-        bool isAscending = true,
+        ProvinceQueryParameters @params,
         bool includeCities = false)
     {
         var query = db.Provinces.AsNoTracking().AsQueryable();
 
-        // 1. Фильтрация (Поиск)
-        if (!string.IsNullOrWhiteSpace(searchTerm))
+        // 1. Фильтрация (Глобальный поиск через параметр Q)
+        if (!string.IsNullOrWhiteSpace(@params.Q))
         {
-            var lowerSearch = searchTerm.ToLower();
+            var lowerSearch = @params.Q.ToLower();
             query = query.Where(p =>
                 p.Name.ToLower().Contains(lowerSearch) ||
                 p.Slug.ToLower().Contains(lowerSearch));
         }
 
-        // 2. Подсчет общего количества записей после фильтрации, но ДО пагинации
+        // 2. Подсчет общего количества записей ДО пагинации
         var totalCount = await query.CountAsync();
 
         // 3. Включение связанных данных
@@ -34,62 +30,47 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
             query = query.Include(p => p.Cities);
         }
 
-        // 4. Сортировка
-        query = sortBy?.ToLower() switch
+        // 4. Сортировка (Золотой стандарт react-admin)
+        var isAscending = string.Equals(@params._order, "ASC", StringComparison.OrdinalIgnoreCase);
+
+        query = @params._sort?.ToLower() switch
         {
             "slug" => isAscending ? query.OrderBy(p => p.Slug) : query.OrderByDescending(p => p.Slug),
-            _ => isAscending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name)
+            "name" or _ => isAscending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name)
         };
 
-        // 5. Пагинация
-        var provinces = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        // 5. Пагинация (Золотой стандарт: Skip/Take на основе индексов)
+        var start = @params._start ?? 0;
+        var end = @params._end ?? 10;
+        var take = end - start;
+
+        var items = await query
+            .Skip(start)
+            .Take(take > 0 ? take : 10)
             .ToListAsync();
 
-        // 6. Маппинг в DTO
-        var items = provinces.Select(p => new ProvinceResponseDto(
-            p.Id,
-            p.Name,
-            p.Slug,
-            includeCities
-                ? p.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId))
-                : null
-        ));
+        // Маппинг в DTO
+        var dtos = items.Select(p => MapToDto(p, includeCities));
 
-        return (items, totalCount);
+        return (dtos, totalCount);
     }
 
     public async Task<ProvinceResponseDto?> GetByIdAsync(Guid id, bool includeCities = false)
     {
         var query = db.Provinces.AsNoTracking().AsQueryable();
-
-        if (includeCities)
-        {
-            query = query.Include(p => p.Cities);
-        }
+        if (includeCities) query = query.Include(p => p.Cities);
 
         var province = await query.FirstOrDefaultAsync(p => p.Id == id);
-
-        if (province is null) return null;
-
-        return MapToDto(province, includeCities);
+        return province is null ? null : MapToDto(province, includeCities);
     }
 
     public async Task<ProvinceResponseDto?> GetBySlugAsync(string slug, bool includeCities = false)
     {
         var query = db.Provinces.AsNoTracking().AsQueryable();
-
-        if (includeCities)
-        {
-            query = query.Include(p => p.Cities);
-        }
+        if (includeCities) query = query.Include(p => p.Cities);
 
         var province = await query.FirstOrDefaultAsync(p => p.Slug == slug);
-
-        if (province is null) return null;
-
-        return MapToDto(province, includeCities);
+        return province is null ? null : MapToDto(province, includeCities);
     }
 
     public async Task<ProvinceResponseDto?> CreateAsync(ProvinceUpsertDto dto)
@@ -139,8 +120,7 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
             province.Name,
             province.Slug,
             includeCities
-                ? province.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId))
-                : null
-        );
+                ? province.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId, province.Name))
+                : null);
     }
 }
