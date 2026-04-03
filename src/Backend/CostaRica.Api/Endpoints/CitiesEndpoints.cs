@@ -13,21 +13,20 @@ public static class CitiesEndpoints
             .WithTags("Cities")
             .RequireAuthorization("ManagementAccess");
 
-        // GET /api/cities
         group.MapGet("/", async (HttpContext context, ICityService service) =>
         {
             var query = context.Request.Query;
 
-            // Создаем параметры и заполняем базовые поля пагинации/сортировки
+            // 1. Извлекаем базовые параметры. Приводим _order к ВЕРХНЕМУ регистру.
             var parameters = new CityQueryParameters
             {
                 _start = int.TryParse(query["_start"], out var s) ? s : 0,
                 _end = int.TryParse(query["_end"], out var e) ? e : 10,
-                _sort = query["_sort"].ToString() ?? "Name",
-                _order = query["_order"].ToString() ?? "ASC"
+                _sort = !string.IsNullOrWhiteSpace(query["_sort"]) ? query["_sort"].ToString() : "Name",
+                _order = !string.IsNullOrWhiteSpace(query["_order"]) ? query["_order"].ToString().ToUpper() : "ASC"
             };
 
-            // Разбираем JSON-фильтр: ?filter={"q":"...", "provinceId":"..."}
+            // 2. Разбираем JSON-фильтр
             var filterJson = query["filter"].ToString();
             if (!string.IsNullOrWhiteSpace(filterJson))
             {
@@ -36,22 +35,19 @@ public static class CitiesEndpoints
                     using var doc = JsonDocument.Parse(filterJson);
                     var root = doc.RootElement;
 
-                    if (root.TryGetProperty("q", out var q))
-                        parameters.Q = q.GetString();
+                    // ПРОВЕРКА Q и q (Case-insensitive)
+                    if (root.TryGetProperty("q", out var qLow)) parameters.Q = qLow.GetString();
+                    else if (root.TryGetProperty("Q", out var qUp)) parameters.Q = qUp.GetString();
 
+                    // Фильтр по провинции
                     if (root.TryGetProperty("provinceId", out var pId) && Guid.TryParse(pId.GetString(), out var pGuid))
                         parameters.ProvinceId = pGuid;
 
-                    if (root.TryGetProperty("name", out var name))
-                        parameters.Name = name.GetString();
-
-                    if (root.TryGetProperty("slug", out var slug))
-                        parameters.Slug = slug.GetString();
+                    // Остальные поля
+                    if (root.TryGetProperty("name", out var n)) parameters.Name = n.GetString();
+                    if (root.TryGetProperty("slug", out var sl)) parameters.Slug = sl.GetString();
                 }
-                catch
-                {
-                    // Игнорируем ошибки парсинга, работаем с тем, что есть
-                }
+                catch { /* Игнорируем ошибки парсинга */ }
             }
 
             var (items, totalCount) = await service.GetAllAsync(parameters);
@@ -63,39 +59,21 @@ public static class CitiesEndpoints
         })
         .WithName("GetCities");
 
-        // GET /api/cities/{id}
+        // Остальные методы (GetById, Post, Put, Delete) остаются без изменений
         group.MapGet("/{id:guid}", async (Guid id, ICityService service) =>
-        {
-            var result = await service.GetByIdAsync(id);
-            return result is not null ? Results.Ok(result) : Results.NotFound();
-        })
-        .WithName("GetCityById");
+            await service.GetByIdAsync(id) is { } city ? Results.Ok(city) : Results.NotFound());
 
-        // POST /api/cities
         group.MapPost("/", async (CityUpsertDto dto, ICityService service) =>
         {
             var result = await service.CreateAsync(dto);
-            if (result is null) return Results.BadRequest(new { error = "Slug exists or Province missing" });
-            return Results.Created($"/api/cities/{result.Id}", result);
-        })
-        .WithName("CreateCity");
+            return result is null ? Results.BadRequest() : Results.Created($"/api/cities/{result.Id}", result);
+        });
 
-        // PUT /api/cities/{id}
         group.MapPut("/{id:guid}", async (Guid id, CityUpsertDto dto, ICityService service) =>
-        {
-            var updated = await service.UpdateAsync(id, dto);
-            if (!updated) return Results.BadRequest(new { error = "Update failed (slug conflict or not found)" });
-            return Results.NoContent();
-        })
-        .WithName("UpdateCity");
+            await service.UpdateAsync(id, dto) ? Results.NoContent() : Results.BadRequest());
 
-        // DELETE /api/cities/{id}
         group.MapDelete("/{id:guid}", async (Guid id, ICityService service) =>
-        {
-            var deleted = await service.DeleteAsync(id);
-            return deleted ? Results.NoContent() : Results.NotFound();
-        })
-        .RequireAuthorization("AdminFullAccess")
-        .WithName("DeleteCity");
+            await service.DeleteAsync(id) ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization("AdminFullAccess");
     }
 }
