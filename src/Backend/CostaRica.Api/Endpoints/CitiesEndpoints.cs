@@ -18,12 +18,14 @@ public static class CitiesEndpoints
         {
             var (items, totalCount) = await service.GetAllAsync(@params);
 
+            // «Золотой стандарт»: передаем общее количество записей в заголовке
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
             return Results.Ok(items);
         })
-        .WithName("GetCities");
+        .WithName("GetCities")
+        .WithSummary("Получить список городов с пагинацией, сортировкой и фильтрами");
 
         // GET /api/cities/{id}
         group.MapGet("/{id:guid}", async (Guid id, ICityService service) =>
@@ -31,7 +33,8 @@ public static class CitiesEndpoints
             var result = await service.GetByIdAsync(id);
             return result is not null ? Results.Ok(result) : Results.NotFound();
         })
-        .WithName("GetCityById");
+        .WithName("GetCityById")
+        .WithSummary("Получить данные конкретного города по ID");
 
         // POST /api/cities
         group.MapPost("/", async (CityUpsertDto dto, ICityService service) =>
@@ -48,7 +51,8 @@ public static class CitiesEndpoints
 
             return Results.Created($"/api/cities/{result.Id}", result);
         })
-        .WithName("CreateCity");
+        .WithName("CreateCity")
+        .WithSummary("Создать новый город");
 
         // PUT /api/cities/{id}
         group.MapPut("/{id:guid}", async (Guid id, CityUpsertDto dto, ICityService service) =>
@@ -59,13 +63,14 @@ public static class CitiesEndpoints
             {
                 return Results.BadRequest(new
                 {
-                    error = "Обновление не удалось. Возможно, город не найден или Slug уже занят."
+                    error = "Обновление не удалось. Возможно, город не найден, Slug уже занят или ProvinceId не существует."
                 });
             }
 
             return Results.NoContent();
         })
-        .WithName("UpdateCity");
+        .WithName("UpdateCity")
+        .WithSummary("Обновить данные города");
 
         // DELETE /api/cities/{id}
         group.MapDelete("/{id:guid}", async (Guid id, ICityService service) =>
@@ -75,6 +80,7 @@ public static class CitiesEndpoints
         })
         // УРОВЕНЬ 2: Удаление разрешено только Админам и выше
         .RequireAuthorization("AdminFullAccess")
-        .WithName("DeleteCity");
+        .WithName("DeleteCity")
+        .WithSummary("Удалить город (только для Администраторов)");
     }
 }
