@@ -16,17 +16,53 @@ public static class CitiesEndpoints
         group.MapGet("/", async (HttpContext context, ICityService service) =>
         {
             var query = context.Request.Query;
+            var parameters = new CityQueryParameters();
 
-            // 1. Извлекаем базовые параметры. Приводим _order к ВЕРХНЕМУ регистру.
-            var parameters = new CityQueryParameters
+            // 1. Парсинг Сортировки
+            var sortJson = query["sort"].ToString();
+            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith("["))
             {
-                _start = int.TryParse(query["_start"], out var s) ? s : 0,
-                _end = int.TryParse(query["_end"], out var e) ? e : 10,
-                _sort = !string.IsNullOrWhiteSpace(query["_sort"]) ? query["_sort"].ToString() : "Name",
-                _order = !string.IsNullOrWhiteSpace(query["_order"]) ? query["_order"].ToString().ToUpper() : "ASC"
-            };
+                try
+                {
+                    var sortArray = JsonSerializer.Deserialize<string[]>(sortJson);
+                    if (sortArray?.Length == 2)
+                    {
+                        parameters._sort = sortArray[0];
+                        parameters._order = sortArray[1].ToUpper();
+                    }
+                }
+                catch { }
+            }
 
-            // 2. Разбираем JSON-фильтр
+            // Если JSON-формат не найден, пробуем плоские параметры _sort/_order
+            if (string.IsNullOrEmpty(parameters._sort) || parameters._sort == "Name")
+            {
+                parameters._sort = query["_sort"].ToString() ?? "Name";
+                parameters._order = query["_order"].ToString()?.ToUpper() ?? "ASC";
+            }
+
+            // 2. Парсинг Пагинации (Range)
+            var rangeJson = query["range"].ToString();
+            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith("["))
+            {
+                try
+                {
+                    var rangeArray = JsonSerializer.Deserialize<int[]>(rangeJson);
+                    if (rangeArray?.Length == 2)
+                    {
+                        parameters._start = rangeArray[0];
+                        parameters._end = rangeArray[1] + 1; // В RA range [0,9] означает 10 элементов
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                parameters._start = int.TryParse(query["_start"], out var s) ? s : 0;
+                parameters._end = int.TryParse(query["_end"], out var e) ? e : 10;
+            }
+
+            // 3. Парсинг Фильтров (оставляем существующую логику)
             var filterJson = query["filter"].ToString();
             if (!string.IsNullOrWhiteSpace(filterJson))
             {
@@ -34,20 +70,13 @@ public static class CitiesEndpoints
                 {
                     using var doc = JsonDocument.Parse(filterJson);
                     var root = doc.RootElement;
-
-                    // ПРОВЕРКА Q и q (Case-insensitive)
                     if (root.TryGetProperty("q", out var qLow)) parameters.Q = qLow.GetString();
                     else if (root.TryGetProperty("Q", out var qUp)) parameters.Q = qUp.GetString();
 
-                    // Фильтр по провинции
                     if (root.TryGetProperty("provinceId", out var pId) && Guid.TryParse(pId.GetString(), out var pGuid))
                         parameters.ProvinceId = pGuid;
-
-                    // Остальные поля
-                    if (root.TryGetProperty("name", out var n)) parameters.Name = n.GetString();
-                    if (root.TryGetProperty("slug", out var sl)) parameters.Slug = sl.GetString();
                 }
-                catch { /* Игнорируем ошибки парсинга */ }
+                catch { }
             }
 
             var (items, totalCount) = await service.GetAllAsync(parameters);
@@ -59,7 +88,7 @@ public static class CitiesEndpoints
         })
         .WithName("GetCities");
 
-        // Остальные методы (GetById, Post, Put, Delete) остаются без изменений
+        // Остальные эндпоинты без изменений...
         group.MapGet("/{id:guid}", async (Guid id, ICityService service) =>
             await service.GetByIdAsync(id) is { } city ? Results.Ok(city) : Results.NotFound());
 

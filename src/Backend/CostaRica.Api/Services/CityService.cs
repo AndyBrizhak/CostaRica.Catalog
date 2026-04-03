@@ -29,7 +29,7 @@ public class CityService(DirectoryDbContext db) : ICityService
             query = query.Where(c => c.Slug.Contains(parameters.Slug.ToLower()));
         }
 
-        // Глобальный поиск Q (имя города, слаг или имя провинции)
+        // Глобальный поиск Q
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
             query = query.Where(c =>
@@ -38,28 +38,24 @@ public class CityService(DirectoryDbContext db) : ICityService
                 (c.Province != null && EF.Functions.ILike(c.Province.Name, $"%{parameters.Q}%")));
         }
 
-        // 2. Подсчет общего количества до применения пагинации
+        // 2. Сортировка (Исправлено: приведение к нижнему регистру для надежного маппинга)
         var totalCount = await query.CountAsync();
 
-        // 3. Сортировка (Золотой стандарт)
-        var isAscending = string.Equals(parameters._order, "ASC", StringComparison.OrdinalIgnoreCase);
+        string sortField = parameters._sort?.ToLower() ?? "name";
+        bool isDescending = string.Equals(parameters._order, "DESC", StringComparison.OrdinalIgnoreCase);
 
-        query = parameters._sort?.ToLower() switch
+        query = sortField switch
         {
-            "slug" => isAscending ? query.OrderBy(c => c.Slug) : query.OrderByDescending(c => c.Slug),
-            "provinceid" => isAscending ? query.OrderBy(c => c.ProvinceId) : query.OrderByDescending(c => c.ProvinceId),
-            "provincename" => isAscending ? query.OrderBy(c => c.Province!.Name) : query.OrderByDescending(c => c.Province!.Name),
-            _ => isAscending ? query.OrderBy(c => c.Name) : query.OrderByDescending(c => c.Name)
+            "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
+            "slug" => isDescending ? query.OrderByDescending(c => c.Slug) : query.OrderBy(c => c.Slug),
+            "provincename" => isDescending ? query.OrderByDescending(c => c.Province!.Name) : query.OrderBy(c => c.Province!.Name),
+            _ => query.OrderBy(c => c.Name) // Сортировка по умолчанию
         };
 
-        // 4. Пагинация (_start и _end)
-        int start = parameters._start ?? 0;
-        int end = parameters._end ?? 10;
-        int take = Math.Max(0, end - start);
-
+        // 3. Пагинация
         var items = await query
-            .Skip(start)
-            .Take(take)
+            .Skip(parameters._start ?? 0)
+            .Take((parameters._end ?? 10) - (parameters._start ?? 0))
             .Select(c => new CityResponseDto(
                 c.Id,
                 c.Name,
@@ -79,7 +75,9 @@ public class CityService(DirectoryDbContext db) : ICityService
             .Include(c => c.Province)
             .FirstOrDefaultAsync(c => c.Id == id);
 
-        return city is null ? null : new CityResponseDto(
+        if (city is null) return null;
+
+        return new CityResponseDto(
             city.Id,
             city.Name,
             city.Slug,
@@ -90,11 +88,11 @@ public class CityService(DirectoryDbContext db) : ICityService
 
     public async Task<CityResponseDto?> CreateAsync(CityUpsertDto dto)
     {
-        // Проверка существования провинции
+        // Проверяем существование провинции
         var provinceExists = await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId);
         if (!provinceExists) return null;
 
-        // Проверка уникальности слага (регистронезависимо)
+        // Проверяем уникальность слага
         var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == dto.Slug.ToLower());
         if (slugExists) return null;
 
