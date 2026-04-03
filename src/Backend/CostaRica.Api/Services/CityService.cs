@@ -26,8 +26,10 @@ public class CityService(DirectoryDbContext db) : ICityService
 
         if (!string.IsNullOrWhiteSpace(parameters.Slug))
         {
-            // Используем рекомендованный StringComparison для поиска подстроки
-            query = query.Where(c => c.Slug.Contains(parameters.Slug, StringComparison.OrdinalIgnoreCase));
+            // Исправлено: EF Core не всегда понимает StringComparison в Contains.
+            // Используем проверенный ToLower() для трансляции в SQL.
+            var searchSlug = parameters.Slug.ToLower();
+            query = query.Where(c => c.Slug.ToLower().Contains(searchSlug));
         }
 
         // Глобальный поиск Q
@@ -92,7 +94,9 @@ public class CityService(DirectoryDbContext db) : ICityService
         var provinceExists = await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId);
         if (!provinceExists) return null;
 
-        var slugExists = await db.Cities.AnyAsync(c => string.Equals(c.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase));
+        // Исправлено: используем ToLower() вместо StringComparison для корректной трансляции в SQL
+        var slugLower = dto.Slug.ToLower();
+        var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == slugLower);
         if (slugExists) return null;
 
         var city = new City
@@ -120,20 +124,21 @@ public class CityService(DirectoryDbContext db) : ICityService
             if (!provinceExists) return null;
         }
 
-        if (!string.Equals(city.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase))
+        // Исправлено: Убираем StringComparison из AnyAsync, так как это ломает трансляцию в SQL.
+        // Сравниваем через приведение к нижнему регистру.
+        var newSlugLower = dto.Slug.ToLower().Trim();
+        if (city.Slug != newSlugLower)
         {
-            var slugExists = await db.Cities.AnyAsync(c =>
-                string.Equals(c.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase) && c.Id != id);
+            var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == newSlugLower && c.Id != id);
             if (slugExists) return null;
         }
 
         city.Name = dto.Name;
-        city.Slug = dto.Slug.ToLower().Trim();
+        city.Slug = newSlugLower;
         city.ProvinceId = dto.ProvinceId;
 
         await db.SaveChangesAsync();
 
-        // Теперь возвращаем DTO обновленного города, а не bool
         return await GetByIdAsync(id);
     }
 
