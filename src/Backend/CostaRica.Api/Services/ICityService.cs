@@ -29,13 +29,11 @@ public interface ICityService
     /// </summary>
     /// <param name="id">ID города.</param>
     /// <param name="dto">Новые данные.</param>
-    /// <returns>True, если обновление успешно; иначе false.</returns>
-    Task<bool> UpdateAsync(Guid id, CityUpsertDto dto);
+    /// <returns>DTO обновленного города или null, если обновление не удалось.</returns>
+    Task<CityResponseDto?> UpdateAsync(Guid id, CityUpsertDto dto);
 
     /// <summary>
-    /// Удалить город из системы.
+    /// Удалить город.
     /// </summary>
-    /// <param name="id">ID города.</param>
-    /// <returns>True, если город найден и удален.</returns>
     Task<bool> DeleteAsync(Guid id);
 }

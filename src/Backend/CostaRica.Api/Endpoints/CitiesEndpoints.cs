@@ -20,7 +20,8 @@ public static class CitiesEndpoints
 
             // 1. Парсинг Сортировки
             var sortJson = query["sort"].ToString();
-            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith("["))
+            // Оптимизация: используем char '[' вместо string "["
+            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
             {
                 try
                 {
@@ -34,7 +35,6 @@ public static class CitiesEndpoints
                 catch { }
             }
 
-            // Если JSON-формат не найден, пробуем плоские параметры _sort/_order
             if (string.IsNullOrEmpty(parameters._sort) || parameters._sort == "Name")
             {
                 parameters._sort = query["_sort"].ToString() ?? "Name";
@@ -43,7 +43,8 @@ public static class CitiesEndpoints
 
             // 2. Парсинг Пагинации (Range)
             var rangeJson = query["range"].ToString();
-            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith("["))
+            // Оптимизация: используем char '[' вместо string "["
+            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
             {
                 try
                 {
@@ -51,7 +52,7 @@ public static class CitiesEndpoints
                     if (rangeArray?.Length == 2)
                     {
                         parameters._start = rangeArray[0];
-                        parameters._end = rangeArray[1] + 1; // В RA range [0,9] означает 10 элементов
+                        parameters._end = rangeArray[1] + 1;
                     }
                 }
                 catch { }
@@ -62,7 +63,7 @@ public static class CitiesEndpoints
                 parameters._end = int.TryParse(query["_end"], out var e) ? e : 10;
             }
 
-            // 3. Парсинг Фильтров (оставляем существующую логику)
+            // 3. Парсинг Фильтров
             var filterJson = query["filter"].ToString();
             if (!string.IsNullOrWhiteSpace(filterJson))
             {
@@ -88,7 +89,6 @@ public static class CitiesEndpoints
         })
         .WithName("GetCities");
 
-        // Остальные эндпоинты без изменений...
         group.MapGet("/{id:guid}", async (Guid id, ICityService service) =>
             await service.GetByIdAsync(id) is { } city ? Results.Ok(city) : Results.NotFound());
 
@@ -98,8 +98,20 @@ public static class CitiesEndpoints
             return result is null ? Results.BadRequest() : Results.Created($"/api/cities/{result.Id}", result);
         });
 
+        // PUT /api/cities/{id}
         group.MapPut("/{id:guid}", async (Guid id, CityUpsertDto dto, ICityService service) =>
-            await service.UpdateAsync(id, dto) ? Results.NoContent() : Results.BadRequest());
+        {
+            var result = await service.UpdateAsync(id, dto);
+
+            // Исправлено: возвращаем объект (Ok), а не просто 204 (NoContent)
+            if (result is null)
+            {
+                return Results.BadRequest(new { error = "Update failed (slug conflict or not found)" });
+            }
+
+            return Results.Ok(result);
+        })
+        .WithName("UpdateCity");
 
         group.MapDelete("/{id:guid}", async (Guid id, ICityService service) =>
             await service.DeleteAsync(id) ? Results.NoContent() : Results.NotFound())

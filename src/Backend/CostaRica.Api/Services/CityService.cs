@@ -26,7 +26,8 @@ public class CityService(DirectoryDbContext db) : ICityService
 
         if (!string.IsNullOrWhiteSpace(parameters.Slug))
         {
-            query = query.Where(c => c.Slug.Contains(parameters.Slug.ToLower()));
+            // Используем рекомендованный StringComparison для поиска подстроки
+            query = query.Where(c => c.Slug.Contains(parameters.Slug, StringComparison.OrdinalIgnoreCase));
         }
 
         // Глобальный поиск Q
@@ -38,9 +39,9 @@ public class CityService(DirectoryDbContext db) : ICityService
                 (c.Province != null && EF.Functions.ILike(c.Province.Name, $"%{parameters.Q}%")));
         }
 
-        // 2. Сортировка (Исправлено: приведение к нижнему регистру для надежного маппинга)
         var totalCount = await query.CountAsync();
 
+        // 2. Сортировка
         string sortField = parameters._sort?.ToLower() ?? "name";
         bool isDescending = string.Equals(parameters._order, "DESC", StringComparison.OrdinalIgnoreCase);
 
@@ -49,7 +50,7 @@ public class CityService(DirectoryDbContext db) : ICityService
             "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
             "slug" => isDescending ? query.OrderByDescending(c => c.Slug) : query.OrderBy(c => c.Slug),
             "provincename" => isDescending ? query.OrderByDescending(c => c.Province!.Name) : query.OrderBy(c => c.Province!.Name),
-            _ => query.OrderBy(c => c.Name) // Сортировка по умолчанию
+            _ => query.OrderBy(c => c.Name)
         };
 
         // 3. Пагинация
@@ -88,12 +89,10 @@ public class CityService(DirectoryDbContext db) : ICityService
 
     public async Task<CityResponseDto?> CreateAsync(CityUpsertDto dto)
     {
-        // Проверяем существование провинции
         var provinceExists = await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId);
         if (!provinceExists) return null;
 
-        // Проверяем уникальность слага
-        var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == dto.Slug.ToLower());
+        var slugExists = await db.Cities.AnyAsync(c => string.Equals(c.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase));
         if (slugExists) return null;
 
         var city = new City
@@ -110,23 +109,22 @@ public class CityService(DirectoryDbContext db) : ICityService
         return await GetByIdAsync(city.Id);
     }
 
-    public async Task<bool> UpdateAsync(Guid id, CityUpsertDto dto)
+    public async Task<CityResponseDto?> UpdateAsync(Guid id, CityUpsertDto dto)
     {
         var city = await db.Cities.FindAsync(id);
-        if (city is null) return false;
+        if (city is null) return null;
 
-        // Если меняется провинция, проверяем её наличие
         if (city.ProvinceId != dto.ProvinceId)
         {
             var provinceExists = await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId);
-            if (!provinceExists) return false;
+            if (!provinceExists) return null;
         }
 
-        // Если меняется слаг, проверяем уникальность
         if (!string.Equals(city.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase))
         {
-            var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == dto.Slug.ToLower() && c.Id != id);
-            if (slugExists) return false;
+            var slugExists = await db.Cities.AnyAsync(c =>
+                string.Equals(c.Slug, dto.Slug, StringComparison.OrdinalIgnoreCase) && c.Id != id);
+            if (slugExists) return null;
         }
 
         city.Name = dto.Name;
@@ -134,7 +132,9 @@ public class CityService(DirectoryDbContext db) : ICityService
         city.ProvinceId = dto.ProvinceId;
 
         await db.SaveChangesAsync();
-        return true;
+
+        // Теперь возвращаем DTO обновленного города, а не bool
+        return await GetByIdAsync(id);
     }
 
     public async Task<bool> DeleteAsync(Guid id)
