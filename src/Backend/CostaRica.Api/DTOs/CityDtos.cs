@@ -2,9 +2,6 @@
 
 namespace CostaRica.Api.DTOs;
 
-/// <summary>
-/// DTO для возврата данных о городе (адаптировано под react-admin)
-/// </summary>
 public record CityResponseDto(
     Guid Id,
     string Name,
@@ -12,24 +9,22 @@ public record CityResponseDto(
     Guid ProvinceId,
     string? ProvinceName = null);
 
-/// <summary>
-/// DTO для создания или обновления города
-/// </summary>
 public record CityUpsertDto(
     [Required] string Name,
     [Required] string Slug,
     [Required] Guid ProvinceId);
 
 /// <summary>
-/// Параметры запроса для списка городов (стандарт react-admin)
+/// Параметры запроса. Изменено на class для поддержки ручного парсинга JSON.
 /// </summary>
-public record CityQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "Name",
-    string? _order = "ASC",
-    string? Name = null,
-    string? Slug = null,
-    Guid? ProvinceId = null,
-    string? Q = null // Общий поиск
-);
+public class CityQueryParameters
+{
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 10;
+    public string? _sort { get; set; } = "Name";
+    public string? _order { get; set; } = "ASC";
+    public string? Name { get; set; }
+    public string? Slug { get; set; }
+    public Guid? ProvinceId { get; set; }
+    public string? Q { get; set; }
+}

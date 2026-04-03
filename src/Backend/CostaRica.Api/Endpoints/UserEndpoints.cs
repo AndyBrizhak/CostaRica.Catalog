@@ -1,7 +1,6 @@
 ﻿using System.Security.Claims;
-using CostaRica.Api.Data;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
+using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CostaRica.Api.Endpoints;
@@ -12,125 +11,56 @@ public static class UserEndpoints
     {
         var group = app.MapGroup("/api/admin/users")
             .WithTags("Admin: Users")
-            .RequireAuthorization("AdminFullAccess"); // Доступ только для Admin и SuperAdmin. Viewer и Manager сюда не попадут.
+            .RequireAuthorization("AdminFullAccess");
 
-        // 1. Получить список всех пользователей
-        group.MapGet("/", async (UserManager<ApplicationUser> userManager) =>
+        group.MapGet("/", async ([FromQuery] string? range, [FromQuery] string? sort, IAdminUserService userService, HttpContext context) =>
         {
-            var users = await userManager.Users
-                .Select(u => new
+            var (users, totalCount) = await userService.GetPagedUsersAsync(range, sort);
+            int start = 0;
+            int end = totalCount > 0 ? totalCount - 1 : 0;
+            if (!string.IsNullOrWhiteSpace(range))
+            {
+                var rangeParams = System.Text.Json.JsonSerializer.Deserialize<List<int>>(range);
+                if (rangeParams is { Count: 2 })
                 {
-                    u.Id,
-                    u.UserName,
-                    u.Email,
-                    u.EmailConfirmed
-                })
-                .ToListAsync();
-
+                    start = rangeParams[0];
+                    int actualCount = users.Count();
+                    end = start + (actualCount > 0 ? actualCount - 1 : 0);
+                }
+            }
+            context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
+            context.Response.Headers.Append("Content-Range", $"users {start}-{end}/{totalCount}");
             return Results.Ok(users);
-        })
-        .WithName("GetAllUsers");
+        });
 
-        // 2. Получить детали и роли пользователя
-        group.MapGet("/{id:guid}", async (Guid id, UserManager<ApplicationUser> userManager) =>
+        group.MapGet("/{id:guid}", async (Guid id, IAdminUserService userService) =>
         {
-            var user = await userManager.FindByIdAsync(id.ToString());
-            if (user == null) return Results.NotFound();
+            var result = await userService.GetUserByIdAsync(id);
+            return result is not null ? Results.Ok(result) : Results.NotFound();
+        });
 
-            var roles = await userManager.GetRolesAsync(user);
-
-            return Results.Ok(new
-            {
-                user.Id,
-                user.UserName,
-                user.Email,
-                Roles = roles
-            });
-        })
-        .WithName("GetUserDetails");
-
-        // 3. Обновить роли (Иерархическая логика)
-        group.MapPut("/{id:guid}/roles", async (
-            Guid id,
-            [FromBody] List<string> newRoles,
-            ClaimsPrincipal actor,
-            UserManager<ApplicationUser> userManager) =>
+        group.MapPut("/{id:guid}", async (Guid id, [FromBody] UserUpdateDto request, ClaimsPrincipal actor, IAdminUserService userService) =>
         {
-            var targetUser = await userManager.FindByIdAsync(id.ToString());
-            if (targetUser == null) return Results.NotFound();
+            var result = await userService.UpdateUserRolesAsync(id, request.Email, request.UserName, request.Roles, actor);
+            if (result.Succeeded) return Results.Ok(await userService.GetUserByIdAsync(id));
 
-            // Определяем уровни прав
-            var actorRoles = actor.FindAll(ClaimTypes.Role).Select(r => r.Value);
-            var actorMaxLevel = GetMaxRoleLevel(actorRoles);
-
-            var targetCurrentRoles = await userManager.GetRolesAsync(targetUser);
-            var targetMaxLevel = GetMaxRoleLevel(targetCurrentRoles);
-
-            var requestedMaxLevel = GetMaxRoleLevel(newRoles);
-
-            // ПРОВЕРКА 1: Можно менять только тех, кто строго ниже тебя по рангу
-            // (Супер-админ не может менять супер-админа, Админ не может менять Админа)
-            if (actorMaxLevel <= targetMaxLevel)
+            return result.StatusCode switch
             {
-                return Results.Json(new { error = "Недостаточно прав для изменения этого пользователя." }, statusCode: 403);
-            }
+                403 => Results.Json(new { error = result.ErrorMessage }, statusCode: 403),
+                _ => Results.BadRequest(new { error = result.ErrorMessage })
+            };
+        });
 
-            // ПРОВЕРКА 2: Нельзя присваивать роли своего уровня или выше
-            // (Админ не может сделать кого-то Админом или Супер-админом)
-            if (actorMaxLevel <= requestedMaxLevel)
-            {
-                return Results.Json(new { error = "Вы не можете назначать роли своего уровня или выше." }, statusCode: 403);
-            }
-
-            await userManager.RemoveFromRolesAsync(targetUser, targetCurrentRoles);
-            var result = await userManager.AddToRolesAsync(targetUser, newRoles);
-
-            if (!result.Succeeded)
-                return Results.BadRequest(result.Errors);
-
-            return Results.NoContent();
-        })
-        .WithName("UpdateUserRoles");
-
-        // 4. Удалить пользователя (Иерархическая логика)
-        group.MapDelete("/{id:guid}", async (
-            Guid id,
-            ClaimsPrincipal actor,
-            UserManager<ApplicationUser> userManager) =>
+        group.MapDelete("/{id:guid}", async (Guid id, ClaimsPrincipal actor, IAdminUserService userService) =>
         {
-            var targetUser = await userManager.FindByIdAsync(id.ToString());
-            if (targetUser == null) return Results.NotFound();
-
-            var actorMaxLevel = GetMaxRoleLevel(actor.FindAll(ClaimTypes.Role).Select(r => r.Value));
-            var targetCurrentRoles = await userManager.GetRolesAsync(targetUser);
-            var targetMaxLevel = GetMaxRoleLevel(targetCurrentRoles);
-
-            // ПРОВЕРКА: Удалять можно только тех, кто строго ниже по рангу
-            if (actorMaxLevel <= targetMaxLevel)
-            {
-                return Results.Json(new { error = "Недостаточно прав для удаления этого пользователя." }, statusCode: 403);
-            }
-
-            var result = await userManager.DeleteAsync(targetUser);
-
-            if (!result.Succeeded)
-                return Results.BadRequest(result.Errors);
-
-            return Results.NoContent();
-        })
-        .WithName("DeleteUser");
+            var result = await userService.DeleteUserAsync(id, actor);
+            return result.Succeeded ? Results.NoContent() : Results.Json(new { error = result.ErrorMessage }, statusCode: result.StatusCode);
+        });
     }
-
-    // Вспомогательные методы для расчета иерархии
-    private static int GetRoleLevel(string role) => role switch
-    {
-        "SuperAdmin" => 3,
-        "Admin" => 2,
-        "Manager" => 1,
-        "Viewer" => 0,
-        _ => -1
-    };
-
-    private static int GetMaxRoleLevel(IEnumerable<string> roles) =>
-        roles.Any() ? roles.Max(GetRoleLevel) : -1;
 }
+
+public record UserUpdateDto(
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("userName")] string UserName,
+    [property: JsonPropertyName("roles")] List<string> Roles
+);

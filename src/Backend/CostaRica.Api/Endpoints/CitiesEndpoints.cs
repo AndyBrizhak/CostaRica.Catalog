@@ -1,6 +1,7 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -10,13 +11,76 @@ public static class CitiesEndpoints
     {
         var group = routes.MapGroup("/api/cities")
             .WithTags("Cities")
-            // УРОВЕНЬ 1: Доступ только для персонала (Manager, Admin, SuperAdmin)
             .RequireAuthorization("ManagementAccess");
 
-        // GET /api/cities
-        group.MapGet("/", async ([AsParameters] CityQueryParameters @params, ICityService service, HttpContext context) =>
+        group.MapGet("/", async (HttpContext context, ICityService service) =>
         {
-            var (items, totalCount) = await service.GetAllAsync(@params);
+            var query = context.Request.Query;
+            var parameters = new CityQueryParameters();
+
+            // 1. Парсинг Сортировки
+            var sortJson = query["sort"].ToString();
+            // Оптимизация: используем char '[' вместо string "["
+            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
+            {
+                try
+                {
+                    var sortArray = JsonSerializer.Deserialize<string[]>(sortJson);
+                    if (sortArray?.Length == 2)
+                    {
+                        parameters._sort = sortArray[0];
+                        parameters._order = sortArray[1].ToUpper();
+                    }
+                }
+                catch { }
+            }
+
+            if (string.IsNullOrEmpty(parameters._sort) || parameters._sort == "Name")
+            {
+                parameters._sort = query["_sort"].ToString() ?? "Name";
+                parameters._order = query["_order"].ToString()?.ToUpper() ?? "ASC";
+            }
+
+            // 2. Парсинг Пагинации (Range)
+            var rangeJson = query["range"].ToString();
+            // Оптимизация: используем char '[' вместо string "["
+            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
+            {
+                try
+                {
+                    var rangeArray = JsonSerializer.Deserialize<int[]>(rangeJson);
+                    if (rangeArray?.Length == 2)
+                    {
+                        parameters._start = rangeArray[0];
+                        parameters._end = rangeArray[1] + 1;
+                    }
+                }
+                catch { }
+            }
+            else
+            {
+                parameters._start = int.TryParse(query["_start"], out var s) ? s : 0;
+                parameters._end = int.TryParse(query["_end"], out var e) ? e : 10;
+            }
+
+            // 3. Парсинг Фильтров
+            var filterJson = query["filter"].ToString();
+            if (!string.IsNullOrWhiteSpace(filterJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(filterJson);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("q", out var qLow)) parameters.Q = qLow.GetString();
+                    else if (root.TryGetProperty("Q", out var qUp)) parameters.Q = qUp.GetString();
+
+                    if (root.TryGetProperty("provinceId", out var pId) && Guid.TryParse(pId.GetString(), out var pGuid))
+                        parameters.ProvinceId = pGuid;
+                }
+                catch { }
+            }
+
+            var (items, totalCount) = await service.GetAllAsync(parameters);
 
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
@@ -25,56 +89,32 @@ public static class CitiesEndpoints
         })
         .WithName("GetCities");
 
-        // GET /api/cities/{id}
         group.MapGet("/{id:guid}", async (Guid id, ICityService service) =>
-        {
-            var result = await service.GetByIdAsync(id);
-            return result is not null ? Results.Ok(result) : Results.NotFound();
-        })
-        .WithName("GetCityById");
+            await service.GetByIdAsync(id) is { } city ? Results.Ok(city) : Results.NotFound());
 
-        // POST /api/cities
         group.MapPost("/", async (CityUpsertDto dto, ICityService service) =>
         {
             var result = await service.CreateAsync(dto);
-
-            if (result is null)
-            {
-                return Results.BadRequest(new
-                {
-                    error = "Не удалось создать город. Проверьте уникальность Slug и существование ProvinceId."
-                });
-            }
-
-            return Results.Created($"/api/cities/{result.Id}", result);
-        })
-        .WithName("CreateCity");
+            return result is null ? Results.BadRequest() : Results.Created($"/api/cities/{result.Id}", result);
+        });
 
         // PUT /api/cities/{id}
         group.MapPut("/{id:guid}", async (Guid id, CityUpsertDto dto, ICityService service) =>
         {
-            var updated = await service.UpdateAsync(id, dto);
+            var result = await service.UpdateAsync(id, dto);
 
-            if (!updated)
+            // Исправлено: возвращаем объект (Ok), а не просто 204 (NoContent)
+            if (result is null)
             {
-                return Results.BadRequest(new
-                {
-                    error = "Обновление не удалось. Возможно, город не найден или Slug уже занят."
-                });
+                return Results.BadRequest(new { error = "Update failed (slug conflict or not found)" });
             }
 
-            return Results.NoContent();
+            return Results.Ok(result);
         })
         .WithName("UpdateCity");
 
-        // DELETE /api/cities/{id}
         group.MapDelete("/{id:guid}", async (Guid id, ICityService service) =>
-        {
-            var deleted = await service.DeleteAsync(id);
-            return deleted ? Results.NoContent() : Results.NotFound();
-        })
-        // УРОВЕНЬ 2: Удаление разрешено только Админам и выше
-        .RequireAuthorization("AdminFullAccess")
-        .WithName("DeleteCity");
+            await service.DeleteAsync(id) ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization("AdminFullAccess");
     }
 }

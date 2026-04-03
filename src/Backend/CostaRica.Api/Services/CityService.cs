@@ -26,42 +26,46 @@ public class CityService(DirectoryDbContext db) : ICityService
 
         if (!string.IsNullOrWhiteSpace(parameters.Slug))
         {
-            query = query.Where(c => c.Slug.Contains(parameters.Slug));
+            // Исправлено: EF Core не всегда понимает StringComparison в Contains.
+            // Используем проверенный ToLower() для трансляции в SQL.
+            var searchSlug = parameters.Slug.ToLower();
+            query = query.Where(c => c.Slug.ToLower().Contains(searchSlug));
         }
 
+        // Глобальный поиск Q
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
-            query = query.Where(c => EF.Functions.ILike(c.Name, $"%{parameters.Q}%") ||
-                                    c.Slug.Contains(parameters.Q));
+            query = query.Where(c =>
+                EF.Functions.ILike(c.Name, $"%{parameters.Q}%") ||
+                EF.Functions.ILike(c.Slug, $"%{parameters.Q}%") ||
+                (c.Province != null && EF.Functions.ILike(c.Province.Name, $"%{parameters.Q}%")));
         }
 
-        // 2. Подсчет общего количества до применения пагинации
         var totalCount = await query.CountAsync();
 
-        // 3. Сортировка
-        query = parameters._sort?.ToLower() switch
+        // 2. Сортировка
+        string sortField = parameters._sort?.ToLower() ?? "name";
+        bool isDescending = string.Equals(parameters._order, "DESC", StringComparison.OrdinalIgnoreCase);
+
+        query = sortField switch
         {
-            "name" => parameters._order == "DESC" ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
-            "slug" => parameters._order == "DESC" ? query.OrderByDescending(c => c.Slug) : query.OrderBy(c => c.Slug),
-            "provincename" => parameters._order == "DESC" ? query.OrderByDescending(c => c.Province!.Name) : query.OrderBy(c => c.Province!.Name),
-            _ => query.OrderBy(c => c.Name) // Сортировка по умолчанию
+            "name" => isDescending ? query.OrderByDescending(c => c.Name) : query.OrderBy(c => c.Name),
+            "slug" => isDescending ? query.OrderByDescending(c => c.Slug) : query.OrderBy(c => c.Slug),
+            "provincename" => isDescending ? query.OrderByDescending(c => c.Province!.Name) : query.OrderBy(c => c.Province!.Name),
+            _ => query.OrderBy(c => c.Name)
         };
 
-        // 4. Пагинация
-        int start = parameters._start ?? 0;
-        int end = parameters._end ?? 10;
-        int pageSize = end - start;
-        if (pageSize <= 0) pageSize = 10;
-
+        // 3. Пагинация
         var items = await query
-            .Skip(start)
-            .Take(pageSize)
+            .Skip(parameters._start ?? 0)
+            .Take((parameters._end ?? 10) - (parameters._start ?? 0))
             .Select(c => new CityResponseDto(
                 c.Id,
                 c.Name,
                 c.Slug,
                 c.ProvinceId,
-                c.Province != null ? c.Province.Name : null))
+                c.Province != null ? c.Province.Name : null
+            ))
             .ToListAsync();
 
         return (items, totalCount);
@@ -74,29 +78,32 @@ public class CityService(DirectoryDbContext db) : ICityService
             .Include(c => c.Province)
             .FirstOrDefaultAsync(c => c.Id == id);
 
-        return city is null ? null : new CityResponseDto(
+        if (city is null) return null;
+
+        return new CityResponseDto(
             city.Id,
             city.Name,
             city.Slug,
             city.ProvinceId,
-            city.Province?.Name);
+            city.Province?.Name
+        );
     }
 
     public async Task<CityResponseDto?> CreateAsync(CityUpsertDto dto)
     {
-        // Проверка существования провинции
         var provinceExists = await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId);
         if (!provinceExists) return null;
 
-        // Проверка уникальности слага
-        var slugExists = await db.Cities.AnyAsync(c => c.Slug == dto.Slug);
+        // Исправлено: используем ToLower() вместо StringComparison для корректной трансляции в SQL
+        var slugLower = dto.Slug.ToLower();
+        var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == slugLower);
         if (slugExists) return null;
 
         var city = new City
         {
             Id = Guid.NewGuid(),
             Name = dto.Name,
-            Slug = dto.Slug,
+            Slug = dto.Slug.ToLower().Trim(),
             ProvinceId = dto.ProvinceId
         };
 
@@ -106,29 +113,33 @@ public class CityService(DirectoryDbContext db) : ICityService
         return await GetByIdAsync(city.Id);
     }
 
-    public async Task<bool> UpdateAsync(Guid id, CityUpsertDto dto)
+    public async Task<CityResponseDto?> UpdateAsync(Guid id, CityUpsertDto dto)
     {
         var city = await db.Cities.FindAsync(id);
-        if (city is null) return false;
+        if (city is null) return null;
 
         if (city.ProvinceId != dto.ProvinceId)
         {
             var provinceExists = await db.Provinces.AnyAsync(p => p.Id == dto.ProvinceId);
-            if (!provinceExists) return false;
+            if (!provinceExists) return null;
         }
 
-        if (city.Slug != dto.Slug)
+        // Исправлено: Убираем StringComparison из AnyAsync, так как это ломает трансляцию в SQL.
+        // Сравниваем через приведение к нижнему регистру.
+        var newSlugLower = dto.Slug.ToLower().Trim();
+        if (city.Slug != newSlugLower)
         {
-            var slugExists = await db.Cities.AnyAsync(c => c.Slug == dto.Slug);
-            if (slugExists) return false;
+            var slugExists = await db.Cities.AnyAsync(c => c.Slug.ToLower() == newSlugLower && c.Id != id);
+            if (slugExists) return null;
         }
 
         city.Name = dto.Name;
-        city.Slug = dto.Slug;
+        city.Slug = newSlugLower;
         city.ProvinceId = dto.ProvinceId;
 
         await db.SaveChangesAsync();
-        return true;
+
+        return await GetByIdAsync(id);
     }
 
     public async Task<bool> DeleteAsync(Guid id)
