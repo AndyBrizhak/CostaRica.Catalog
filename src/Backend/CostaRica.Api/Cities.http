@@ -2,7 +2,7 @@
 @contentType = application/json
 
 ### ============================================================
-### ПОДГОТОВКА ПЕРЕМЕННЫХ И ТОКЕНОВ
+### ПОДГОТОВКА ПЕРЕМЕННЫХ
 ### ============================================================
 
 # 1. Логин SuperAdmin
@@ -18,7 +18,7 @@ Content-Type: {{contentType}}
 ###
 @superAdminToken = {{loginSuperAdmin.response.body.$.token}}
 
-# 2. Создание Провинции (необходима для создания городов)
+# 2. Создание Провинции для тестов
 # @name createProv
 POST {{base_url}}/api/provinces
 Authorization: Bearer {{superAdminToken}}
@@ -29,52 +29,14 @@ Content-Type: {{contentType}}
 ###
 @provinceId = {{createProv.response.body.$.id}}
 
-# 3. Регистрация и логин Менеджера
-# @name regManager
-POST {{base_url}}/api/auth/register
-Content-Type: {{contentType}}
-
-{ "email": "manager-cities@example.com", "password": "Password123!", "userName": "CityManager" }
-
-###
-@managerId = {{regManager.response.body.$.id}}
-
-# Повышаем до менеджера
-PUT {{base_url}}/api/admin/users/{{managerId}}/roles
-Authorization: Bearer {{superAdminToken}}
-Content-Type: {{contentType}}
-
-[ "Manager" ]
-
-###
-# @name loginManager
-POST {{base_url}}/api/auth/login
-Content-Type: {{contentType}}
-
-{ "email": "manager-cities@example.com", "password": "Password123!" }
-
-###
-@managerToken = {{loginManager.response.body.$.token}}
-
-# 4. Регистрация Зрителя (Viewer)
-# @name regViewer
-POST {{base_url}}/api/auth/register
-Content-Type: {{contentType}}
-
-{ "email": "viewer-cities@example.com", "password": "Password123!", "userName": "CityViewer" }
-
-###
-@viewerToken = {{regViewer.response.body.$.token}}
-
-
 ############################################################
-### СЦЕНАРИЙ 1: MANAGER (СОЗДАНИЕ/ЧТЕНИЕ - ДА, УДАЛЕНИЕ - НЕТ)
+### СЦЕНАРИЙ 1: УПРАВЛЕНИЕ ГОРОДАМИ (CRUD)
 ############################################################
 
-### 1.1 Создание города Менеджером (Должно быть успешно)
-# @name createCityManager
+### 1.1 Создание города
+# @name createCity
 POST {{base_url}}/api/cities
-Authorization: Bearer {{managerToken}}
+Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
 {
@@ -84,33 +46,57 @@ Content-Type: {{contentType}}
 }
 
 ###
-@cityId = {{createCityManager.response.body.$.id}}
+@cityId = {{createCity.response.body.$.id}}
 
-### 1.2 Получение списка Менеджером (Должно быть успешно)
-GET {{base_url}}/api/cities
-Authorization: Bearer {{managerToken}}
+### 1.2 Получение списка (Стандартный запрос React Admin)
+# Проверяем пагинацию, сортировку и фильтр одновременно
+GET {{base_url}}/api/cities?sort=["name","ASC"]&range=[0,9]&filter={"provinceId":"{{provinceId}}"}
+Authorization: Bearer {{superAdminToken}}
 
-### 1.3 Попытка удаления Менеджером (Ожидается: 403 Forbidden)
-DELETE {{base_url}}/api/cities/{{cityId}}
-Authorization: Bearer {{managerToken}}
+### 1.3 Глобальный поиск (Параметр Q)
+# Проверяем, как работает наш новый парсинг JSON-фильтра
+GET {{base_url}}/api/cities?filter={"q":"Lib"}
+Authorization: Bearer {{superAdminToken}}
 
+### 1.4 Обновление города (PUT)
+# Теперь мы ожидаем 200 OK и объект города в ответе
+PUT {{base_url}}/api/cities/{{cityId}}
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
 
-############################################################
-### СЦЕНАРИЙ 2: VIEWER / АНОНИМ (ПОЛНЫЙ БЛОК)
-############################################################
+{
+  "name": "Liberia Central",
+  "slug": "liberia-central",
+  "provinceId": "{{provinceId}}"
+}
 
-### 2.1 Чтение списка Зрителем (Ожидается: 403 Forbidden)
-GET {{base_url}}/api/cities
-Authorization: Bearer {{viewerToken}}
-
-### 2.2 Чтение списка Анонимом (Ожидается: 401 Unauthorized)
-GET {{base_url}}/api/cities
-
-
-############################################################
-### СЦЕНАРИЙ 3: SUPER ADMIN (ЗАВЕРШЕНИЕ ЦИКЛА)
-############################################################
-
-### 3.1 Удаление города Админом (Ожидается: 204 No Content)
+### 1.5 Удаление города
 DELETE {{base_url}}/api/cities/{{cityId}}
 Authorization: Bearer {{superAdminToken}}
+
+
+############################################################
+### СЦЕНАРИЙ 2: ПРОВЕРКА ОШИБОК И ВАЛИДАЦИИ
+############################################################
+
+### 2.1 Ошибка: Дубликат Слага (Ожидается 400 Bad Request)
+POST {{base_url}}/api/cities
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Another Liberia",
+  "slug": "liberia", 
+  "provinceId": "{{provinceId}}"
+}
+
+### 2.2 Ошибка: Несуществующая провинция
+POST {{base_url}}/api/cities
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{
+  "name": "Ghost City",
+  "slug": "ghost-city",
+  "provinceId": "00000000-0000-0000-0000-000000000000"
+}
