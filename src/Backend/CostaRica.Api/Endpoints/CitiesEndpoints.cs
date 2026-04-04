@@ -1,6 +1,7 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -10,13 +11,67 @@ public static class CitiesEndpoints
     {
         var group = routes.MapGroup("/api/cities")
             .WithTags("Cities")
-            // УРОВЕНЬ 1: Доступ только для персонала (Manager, Admin, SuperAdmin)
             .RequireAuthorization("ManagementAccess");
 
-        // GET /api/cities
-        group.MapGet("/", async ([AsParameters] CityQueryParameters @params, ICityService service, HttpContext context) =>
+        group.MapGet("/", async (HttpContext context, ICityService service) =>
         {
-            var (items, totalCount) = await service.GetAllAsync(@params);
+            var query = context.Request.Query;
+            var parameters = new CityQueryParameters();
+
+            // 1. Сортировка sort=["field","ORDER"]
+            var sortJson = query["sort"].ToString();
+            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
+            {
+                try
+                {
+                    var sortArray = JsonSerializer.Deserialize<string[]>(sortJson);
+                    if (sortArray?.Length == 2)
+                    {
+                        parameters._sort = sortArray[0];
+                        parameters._order = sortArray[1].ToUpper();
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Пагинация range=[0,9]
+            var rangeJson = query["range"].ToString();
+            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
+            {
+                try
+                {
+                    var rangeArray = JsonSerializer.Deserialize<int[]>(rangeJson);
+                    if (rangeArray?.Length == 2)
+                    {
+                        parameters._start = rangeArray[0];
+                        parameters._end = rangeArray[1] + 1;
+                    }
+                }
+                catch { }
+            }
+
+            // 3. Фильтрация filter={"q":"...", "provinceId":"..."}
+            var filterJson = query["filter"].ToString();
+            if (!string.IsNullOrWhiteSpace(filterJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(filterJson);
+                    var root = doc.RootElement;
+
+                    // Исправлено: проверяем и "q", и "Q", чтобы избежать проблем с регистром
+                    if (root.TryGetProperty("q", out var qLower))
+                        parameters.Q = qLower.GetString();
+                    else if (root.TryGetProperty("Q", out var qUpper))
+                        parameters.Q = qUpper.GetString();
+
+                    if (root.TryGetProperty("provinceId", out var pId) && Guid.TryParse(pId.GetString(), out var pGuid))
+                        parameters.ProvinceId = pGuid;
+                }
+                catch { }
+            }
+
+            var (items, totalCount) = await service.GetAllAsync(parameters);
 
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
@@ -25,7 +80,6 @@ public static class CitiesEndpoints
         })
         .WithName("GetCities");
 
-        // GET /api/cities/{id}
         group.MapGet("/{id:guid}", async (Guid id, ICityService service) =>
         {
             var result = await service.GetByIdAsync(id);
@@ -33,48 +87,20 @@ public static class CitiesEndpoints
         })
         .WithName("GetCityById");
 
-        // POST /api/cities
         group.MapPost("/", async (CityUpsertDto dto, ICityService service) =>
         {
             var result = await service.CreateAsync(dto);
+            return result is null ? Results.BadRequest() : Results.Created($"/api/cities/{result.Id}", result);
+        });
 
-            if (result is null)
-            {
-                return Results.BadRequest(new
-                {
-                    error = "Не удалось создать город. Проверьте уникальность Slug и существование ProvinceId."
-                });
-            }
-
-            return Results.Created($"/api/cities/{result.Id}", result);
-        })
-        .WithName("CreateCity");
-
-        // PUT /api/cities/{id}
         group.MapPut("/{id:guid}", async (Guid id, CityUpsertDto dto, ICityService service) =>
         {
-            var updated = await service.UpdateAsync(id, dto);
+            var result = await service.UpdateAsync(id, dto);
+            return result is not null ? Results.Ok(result) : Results.BadRequest();
+        });
 
-            if (!updated)
-            {
-                return Results.BadRequest(new
-                {
-                    error = "Обновление не удалось. Возможно, город не найден или Slug уже занят."
-                });
-            }
-
-            return Results.NoContent();
-        })
-        .WithName("UpdateCity");
-
-        // DELETE /api/cities/{id}
         group.MapDelete("/{id:guid}", async (Guid id, ICityService service) =>
-        {
-            var deleted = await service.DeleteAsync(id);
-            return deleted ? Results.NoContent() : Results.NotFound();
-        })
-        // УРОВЕНЬ 2: Удаление разрешено только Админам и выше
-        .RequireAuthorization("AdminFullAccess")
-        .WithName("DeleteCity");
+            await service.DeleteAsync(id) ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization("AdminFullAccess");
     }
 }
