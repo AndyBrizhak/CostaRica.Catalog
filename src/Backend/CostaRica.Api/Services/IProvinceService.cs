@@ -10,7 +10,7 @@ public interface IProvinceService
     /// <summary>
     /// Получить список провинций с поддержкой поиска, фильтрации и пагинации (стандарт react-admin).
     /// </summary>
-    /// <param name="params">Параметры запроса (_start, _end, _sort, _order, Q).</param>
+    /// <param name="params">Параметры запроса (Start, End, Sort, Order, Q).</param>
     /// <param name="includeCities">Флаг включения связанных городов.</param>
     /// <returns>Кортеж, содержащий список провинций и общее количество записей.</returns>
     Task<(IEnumerable<ProvinceResponseDto> Items, int TotalCount)> GetAllAsync(
@@ -23,7 +23,15 @@ public interface IProvinceService
 
     Task<ProvinceResponseDto?> CreateAsync(ProvinceUpsertDto dto);
 
-    Task<bool> UpdateAsync(Guid id, ProvinceUpsertDto dto);
+    /// <summary>
+    /// Обновить данные провинции. 
+    /// Возвращает обновленный объект (ProvinceResponseDto) для синхронизации кэша на фронтенде.
+    /// </summary>
+    Task<ProvinceResponseDto?> UpdateAsync(Guid id, ProvinceUpsertDto dto);
 
+    /// <summary>
+    /// Удалить провинцию. 
+    /// Метод должен реализовывать проверку на наличие связанных городов (FK Check).
+    /// </summary>
     Task<bool> DeleteAsync(Guid id);
 }
