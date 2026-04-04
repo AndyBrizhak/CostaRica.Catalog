@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
 
 namespace CostaRica.Api.DTOs;
 
@@ -19,12 +20,23 @@ public record ProvinceUpsertDto(
     [Required] string Slug);
 
 /// <summary>
-/// Параметры запроса для списка провинций (Золотой стандарт react-admin)
+/// Параметры запроса для списка провинций.
+/// Переведено в класс для обеспечения гибкого маппинга и ручного парсинга параметров react-admin.
 /// </summary>
-public record ProvinceQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "Name",
-    string? _order = "ASC",
-    string? Q = null // Глобальный поиск по Name или Slug
-);
+public class ProvinceQueryParameters
+{
+    [FromQuery(Name = "_start")]
+    public int? Start { get; set; } = 0;
+
+    [FromQuery(Name = "_end")]
+    public int? End { get; set; } = 10;
+
+    [FromQuery(Name = "_sort")]
+    public string? Sort { get; set; } = "Name";
+
+    [FromQuery(Name = "_order")]
+    public string? Order { get; set; } = "ASC";
+
+    [FromQuery(Name = "Q")]
+    public string? Q { get; set; } = null;
+}
