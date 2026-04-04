@@ -21,15 +21,18 @@ public record CityUpsertDto(
     [Required] Guid ProvinceId);
 
 /// <summary>
-/// Параметры запроса для списка городов (стандарт react-admin)
+/// Параметры запроса для списка городов.
+/// Изменено на class с get; set; для возможности ручного наполнения данными 
+/// при десериализации JSON-параметров (filter, range, sort) в эндпоинтах.
 /// </summary>
-public record CityQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "Name",
-    string? _order = "ASC",
-    string? Name = null,
-    string? Slug = null,
-    Guid? ProvinceId = null,
-    string? Q = null // Общий поиск
-);
+public class CityQueryParameters
+{
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 10;
+    public string? _sort { get; set; } = "Name";
+    public string? _order { get; set; } = "ASC";
+    public string? Name { get; set; }
+    public string? Slug { get; set; }
+    public Guid? ProvinceId { get; set; }
+    public string? Q { get; set; } // Глобальный поиск
+}

@@ -11,15 +11,27 @@ public interface ICityService
     /// <returns>Кортеж: список DTO городов и общее количество записей</returns>
     Task<(IEnumerable<CityResponseDto> Items, int TotalCount)> GetAllAsync(CityQueryParameters parameters);
 
-    // Получить конкретный город по ID
+    /// <summary>
+    /// Получить конкретный город по ID
+    /// </summary>
     Task<CityResponseDto?> GetByIdAsync(Guid id);
 
-    // Создать город
+    /// <summary>
+    /// Создать город
+    /// </summary>
     Task<CityResponseDto?> CreateAsync(CityUpsertDto dto);
 
-    // Обновить данные города
-    Task<bool> UpdateAsync(Guid id, CityUpsertDto dto);
+    /// <summary>
+    /// Обновить данные города.
+    /// Согласно «Золотому стандарту», возвращает обновленный объект для синхронизации кэша фронтенда.
+    /// </summary>
+    /// <param name="id">Идентификатор города</param>
+    /// <param name="dto">Данные для обновления</param>
+    /// <returns>Обновленный CityResponseDto или null, если город не найден или возникла ошибка валидации</returns>
+    Task<CityResponseDto?> UpdateAsync(Guid id, CityUpsertDto dto);
 
-    // Удалить город
+    /// <summary>
+    /// Удалить город
+    /// </summary>
     Task<bool> DeleteAsync(Guid id);
 }
