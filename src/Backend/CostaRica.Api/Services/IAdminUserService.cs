@@ -5,7 +5,7 @@ namespace CostaRica.Api.Services;
 
 /// <summary>
 /// Service for administrative user management.
-/// Follows the "Gold Standard" pattern used in CityService.
+/// Follows the "Gold Standard" pattern with a strict "one user - one role" logic.
 /// </summary>
 public interface IAdminUserService
 {
@@ -22,9 +22,10 @@ public interface IAdminUserService
     Task<object?> GetUserByIdAsync(Guid id);
 
     /// <summary>
-    /// Updates user roles and basic information.
+    /// Updates user information and assigns a single security role.
     /// </summary>
-    Task<ServiceResult> UpdateUserRolesAsync(Guid id, string? email, string? userName, List<string> newRoles, ClaimsPrincipal actor);
+    /// <param name="newRole">The single role to be assigned to the user.</param>
+    Task<ServiceResult> UpdateUserRolesAsync(Guid id, string? email, string? userName, string newRole, ClaimsPrincipal actor);
 
     /// <summary>
     /// Permanently deletes a user from the system.

@@ -8,7 +8,7 @@ namespace CostaRica.Api.Services;
 
 /// <summary>
 /// Implementation of administrative user management service.
-/// Optimized for react-admin "Gold Standard" with ILike search and role-based filtering.
+/// Enforces a strict "one user - one role" logic for simplicity and consistency.
 /// </summary>
 public class AdminUserService : IAdminUserService
 {
@@ -25,7 +25,7 @@ public class AdminUserService : IAdminUserService
     {
         var query = _userManager.Users.AsNoTracking();
 
-        // 1. Global Search (q) - searching in Email and UserName
+        // 1. Search filter (q)
         if (!string.IsNullOrWhiteSpace(parameters.q))
         {
             var searchPattern = $"%{parameters.q}%";
@@ -34,7 +34,7 @@ public class AdminUserService : IAdminUserService
                 EF.Functions.ILike(u.UserName!, searchPattern));
         }
 
-        // 2. Filter by Roles
+        // 2. Roles filter (filtering users who have any of the specified roles)
         if (parameters.roles != null && parameters.roles.Length > 0)
         {
             query = query.Where(u => _context.UserRoles
@@ -54,15 +54,15 @@ public class AdminUserService : IAdminUserService
             {
                 "email" => isDesc ? query.OrderByDescending(u => u.Email) : query.OrderBy(u => u.Email),
                 "username" => isDesc ? query.OrderByDescending(u => u.UserName) : query.OrderBy(u => u.UserName),
-                "roles" => isDesc
+                "role" => isDesc
                     ? query.OrderByDescending(u => _context.UserRoles
                         .Where(ur => ur.UserId == u.Id)
                         .Join(_context.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-                        .OrderBy(n => n).FirstOrDefault())
+                        .FirstOrDefault())
                     : query.OrderBy(u => _context.UserRoles
                         .Where(ur => ur.UserId == u.Id)
                         .Join(_context.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name)
-                        .OrderBy(n => n).FirstOrDefault()),
+                        .FirstOrDefault()),
                 _ => isDesc ? query.OrderByDescending(u => u.Id) : query.OrderBy(u => u.Id)
             };
         }
@@ -70,53 +70,54 @@ public class AdminUserService : IAdminUserService
         // 4. Pagination
         int skip = parameters._start ?? 0;
         int take = (parameters._end ?? 9) - skip + 1;
-
         var userList = await query.Skip(skip).Take(take).ToListAsync();
 
-        // 5. Projection with Roles (efficiently fetching roles for the page)
-        var usersWithRoles = new List<object>();
+        // 5. Projection (Returning a single 'role' string)
+        var usersWithRole = new List<object>();
         foreach (var user in userList)
         {
             var roles = await _userManager.GetRolesAsync(user);
-            usersWithRoles.Add(new
+            usersWithRole.Add(new
             {
                 user.Id,
                 user.UserName,
                 user.Email,
                 user.EmailConfirmed,
-                roles
+                role = roles.FirstOrDefault() ?? "No Role"
             });
         }
 
-        return (usersWithRoles, totalCount);
+        return (usersWithRole, totalCount);
     }
 
     public async Task<object?> GetUserByIdAsync(Guid id)
     {
         var user = await _userManager.FindByIdAsync(id.ToString());
         if (user == null) return null;
+
         var roles = await _userManager.GetRolesAsync(user);
-        return new { user.Id, user.UserName, user.Email, user.EmailConfirmed, roles };
+        return new
+        {
+            user.Id,
+            user.UserName,
+            user.Email,
+            user.EmailConfirmed,
+            role = roles.FirstOrDefault() ?? "No Role"
+        };
     }
 
-    public async Task<ServiceResult> UpdateUserRolesAsync(Guid id, string? email, string? userName, List<string> newRoles, ClaimsPrincipal actor)
+    public async Task<ServiceResult> UpdateUserRolesAsync(Guid id, string? email, string? userName, string newRole, ClaimsPrincipal actor)
     {
         var targetUser = await _userManager.FindByIdAsync(id.ToString());
         if (targetUser == null) return ServiceResult.Failure("User not found", 404);
 
-        // Modification of Email/UserName is prohibited via Admin API for safety
-        if (!string.IsNullOrWhiteSpace(email) && !string.Equals(targetUser.Email, email.Trim(), StringComparison.OrdinalIgnoreCase))
-            return ServiceResult.Failure("Email modification is prohibited.", 400);
-
-        if (!string.IsNullOrWhiteSpace(userName) && !string.Equals(targetUser.UserName, userName.Trim(), StringComparison.OrdinalIgnoreCase))
-            return ServiceResult.Failure("Username modification is prohibited.", 400);
-
+        // Security check: Role hierarchy
         var actorRoles = actor.FindAll(ClaimTypes.Role).Select(r => r.Value);
         var targetCurrentRoles = await _userManager.GetRolesAsync(targetUser);
 
         int actorLevel = GetMaxRoleLevel(actorRoles);
         int targetLevel = GetMaxRoleLevel(targetCurrentRoles);
-        int requestedLevel = GetMaxRoleLevel(newRoles);
+        int requestedLevel = GetMaxRoleLevel(new[] { newRole });
 
         if (actorLevel <= targetLevel)
             return ServiceResult.Failure("Permission denied: Target user has equal or higher rank.", 403);
@@ -124,13 +125,11 @@ public class AdminUserService : IAdminUserService
         if (actorLevel <= requestedLevel)
             return ServiceResult.Failure("Permission denied: You cannot assign a role equal to or higher than your own.", 403);
 
-        var removeResult = await _userManager.RemoveFromRolesAsync(targetUser, targetCurrentRoles);
-        if (!removeResult.Succeeded) return ServiceResult.Failure("Failed to clear existing roles.");
+        // Enforce single role: Remove all and add one
+        await _userManager.RemoveFromRolesAsync(targetUser, targetCurrentRoles);
+        var addResult = await _userManager.AddToRoleAsync(targetUser, newRole);
 
-        var addResult = await _userManager.AddToRolesAsync(targetUser, newRoles);
-        if (!addResult.Succeeded) return ServiceResult.Failure("Failed to assign new roles.");
-
-        return ServiceResult.Success();
+        return addResult.Succeeded ? ServiceResult.Success() : ServiceResult.Failure("Failed to assign role.");
     }
 
     public async Task<ServiceResult> DeleteUserAsync(Guid id, ClaimsPrincipal actor)

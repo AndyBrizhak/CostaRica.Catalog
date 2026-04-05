@@ -29,13 +29,9 @@ public static class UserEndpoints
                     using var doc = JsonDocument.Parse(filterJson);
                     var root = doc.RootElement;
 
-                    // Support both 'q' and 'Q' for global search
                     if (root.TryGetProperty("q", out var qProp))
                         parameters.q = qProp.GetString();
-                    else if (root.TryGetProperty("Q", out var QProp))
-                        parameters.q = QProp.GetString();
 
-                    // Parse roles array
                     if (root.TryGetProperty("roles", out var rolesProp) && rolesProp.ValueKind == JsonValueKind.Array)
                     {
                         parameters.roles = rolesProp.EnumerateArray()
@@ -97,10 +93,11 @@ public static class UserEndpoints
         })
         .WithName("GetUserById");
 
-        // PUT /{id} - Update user roles/info
+        // PUT /{id} - Update user role and info
         group.MapPut("/{id:guid}", async (Guid id, [FromBody] UserUpdateDto request, ClaimsPrincipal actor, IAdminUserService userService) =>
         {
-            var result = await userService.UpdateUserRolesAsync(id, request.Email, request.UserName, request.Roles, actor);
+            // Passing request.Role as a single string to the service
+            var result = await userService.UpdateUserRolesAsync(id, request.Email, request.UserName, request.Role, actor);
 
             if (result.Succeeded)
                 return Results.Ok(await userService.GetUserByIdAsync(id));

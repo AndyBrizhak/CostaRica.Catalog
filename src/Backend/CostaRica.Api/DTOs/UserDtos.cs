@@ -18,16 +18,16 @@ public class UserQueryParameters
     public string? q { get; set; }
 
     /// <summary>
-    /// Filter by specific roles.
+    /// Filter by specific roles (used as an array for multi-selection in filters).
     /// </summary>
     public string[]? roles { get; set; }
 }
 
 /// <summary>
-/// DTO for updating user information and roles.
+/// DTO for updating user information and a single role.
 /// </summary>
 public record UserUpdateDto(
     [property: JsonPropertyName("email")] string Email,
     [property: JsonPropertyName("userName")] string UserName,
-    [property: JsonPropertyName("roles")] List<string> Roles
+    [property: JsonPropertyName("role")] string Role // Strict "one role" logic
 );
