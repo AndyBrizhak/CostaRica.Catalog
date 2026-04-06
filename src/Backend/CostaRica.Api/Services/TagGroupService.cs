@@ -12,57 +12,81 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
             .AsNoTracking()
             .AsQueryable();
 
-        if (!string.IsNullOrWhiteSpace(parameters.NameEn))
+        // 1. Фильтрация: Глобальный поиск (Q)
+        if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
-            var filter = parameters.NameEn.ToLower();
-            query = query.Where(tg => tg.NameEn.ToLower().Contains(filter));
+            query = query.Where(tg =>
+                EF.Functions.ILike(tg.NameEn, $"%{parameters.Q}%") ||
+                EF.Functions.ILike(tg.NameEs, $"%{parameters.Q}%") ||
+                EF.Functions.ILike(tg.Slug, $"%{parameters.Q}%"));
         }
-
-        if (!string.IsNullOrWhiteSpace(parameters.Slug))
+        else
         {
-            var filter = parameters.Slug.ToLower();
-            query = query.Where(tg => tg.Slug.Contains(filter));
+            // Точечные фильтры
+            if (!string.IsNullOrWhiteSpace(parameters.NameEn))
+                query = query.Where(tg => EF.Functions.ILike(tg.NameEn, $"%{parameters.NameEn}%"));
+
+            if (!string.IsNullOrWhiteSpace(parameters.NameEs))
+                query = query.Where(tg => EF.Functions.ILike(tg.NameEs, $"%{parameters.NameEs}%"));
+
+            if (!string.IsNullOrWhiteSpace(parameters.Slug))
+                query = query.Where(tg => EF.Functions.ILike(tg.Slug, $"%{parameters.Slug}%"));
         }
 
         var totalCount = await query.CountAsync(ct);
 
+        // 2. Сортировка (Золотой стандарт: исправление регистра для EF.Property)
+        var sortField = parameters._sort ?? "NameEn";
+
+        // Если фронтенд прислал camelCase (например, "nameEn"), переводим в PascalCase ("NameEn")
+        if (!string.IsNullOrEmpty(sortField) && char.IsLower(sortField[0]))
+        {
+            sortField = char.ToUpper(sortField[0]) + sortField.Substring(1);
+        }
+
+        try
+        {
+            query = parameters._order?.ToUpper() == "DESC"
+                ? query.OrderByDescending(tg => EF.Property<object>(tg, sortField))
+                : query.OrderBy(tg => EF.Property<object>(tg, sortField));
+        }
+        catch (Exception)
+        {
+            // Фолбэк на случай, если поле вообще не существует
+            query = query.OrderBy(tg => tg.NameEn);
+        }
+
+        // 3. Пагинация
         var start = parameters._start ?? 0;
-        var end = parameters._end ?? 10;
+        var end = parameters._end ?? 9;
+        var take = end - start + 1;
 
-        query = query.OrderBy(tg => tg.NameEn)
-                     .Skip(start)
-                     .Take(end - start);
+        var items = await query
+            .Skip(start)
+            .Take(take > 0 ? take : 10)
+            .ToListAsync(ct);
 
-        var items = await query.ToListAsync(ct);
         return (items.Select(MapToDto), totalCount);
     }
 
     public async Task<TagGroupResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        var tagGroup = await db.TagGroups
-            .AsNoTracking()
-            .FirstOrDefaultAsync(tg => tg.Id == id, ct);
-
-        return tagGroup == null ? null : MapToDto(tagGroup);
+        var group = await db.TagGroups.FindAsync([id], ct);
+        return group != null ? MapToDto(group) : null;
     }
 
     public async Task<TagGroupResponseDto?> GetBySlugAsync(string slug, CancellationToken ct = default)
     {
-        var tagGroup = await db.TagGroups
-            .AsNoTracking()
-            .FirstOrDefaultAsync(tg => tg.Slug == slug.ToLowerInvariant(), ct);
-
-        return tagGroup == null ? null : MapToDto(tagGroup);
+        var group = await db.TagGroups.FirstOrDefaultAsync(tg => tg.Slug == slug.ToLower(), ct);
+        return group != null ? MapToDto(group) : null;
     }
 
     public async Task<TagGroupResponseDto?> CreateAsync(TagGroupUpsertDto dto, CancellationToken ct = default)
     {
-        var slugLower = dto.Slug.ToLowerInvariant();
+        var slugLower = dto.Slug.ToLower().Trim();
+        if (await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct)) return null;
 
-        if (await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
-            return null;
-
-        var tagGroup = new TagGroup
+        var group = new TagGroup
         {
             Id = Guid.NewGuid(),
             NameEn = dto.NameEn,
@@ -70,73 +94,42 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
             Slug = slugLower
         };
 
-        db.TagGroups.Add(tagGroup);
+        db.TagGroups.Add(group);
+        await db.SaveChangesAsync(ct);
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return MapToDto(tagGroup);
-        }
-        catch (DbUpdateException)
-        {
-            return null;
-        }
+        return await GetByIdAsync(group.Id, ct);
     }
 
     public async Task<TagGroupResponseDto?> UpdateAsync(Guid id, TagGroupUpsertDto dto, CancellationToken ct = default)
     {
-        var tagGroup = await db.TagGroups.FindAsync([id], ct);
-        if (tagGroup == null) return null;
+        var group = await db.TagGroups.FindAsync([id], ct);
+        if (group == null) return null;
 
-        var slugLower = dto.Slug.ToLowerInvariant();
-
-        if (tagGroup.Slug != slugLower && await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
+        var slugLower = dto.Slug.ToLower().Trim();
+        if (group.Slug != slugLower && await db.TagGroups.AnyAsync(tg => tg.Slug == slugLower, ct))
             return null;
 
-        tagGroup.NameEn = dto.NameEn;
-        tagGroup.NameEs = dto.NameEs;
-        tagGroup.Slug = slugLower;
+        group.NameEn = dto.NameEn;
+        group.NameEs = dto.NameEs;
+        group.Slug = slugLower;
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return MapToDto(tagGroup);
-        }
-        catch (DbUpdateException)
-        {
-            return null;
-        }
+        await db.SaveChangesAsync(ct);
+        return await GetByIdAsync(id, ct);
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        // Включаем теги, чтобы проверить зависимость
-        var tagGroup = await db.TagGroups
+        var group = await db.TagGroups
             .Include(tg => tg.Tags)
             .FirstOrDefaultAsync(tg => tg.Id == id, ct);
 
-        if (tagGroup == null) return false;
+        if (group == null || group.Tags.Any()) return false;
 
-        // Если есть связанные теги, удаление запрещено во избежание ошибки FK
-        if (tagGroup.Tags.Any()) return false;
-
-        db.TagGroups.Remove(tagGroup);
-
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return true;
-        }
-        catch (DbUpdateException)
-        {
-            return false;
-        }
+        db.TagGroups.Remove(group);
+        await db.SaveChangesAsync(ct);
+        return true;
     }
 
-    private static TagGroupResponseDto MapToDto(TagGroup tg) => new(
-        tg.Id,
-        tg.NameEn,
-        tg.NameEs,
-        tg.Slug
-    );
+    private static TagGroupResponseDto MapToDto(TagGroup tg) =>
+        new(tg.Id, tg.NameEn, tg.NameEs, tg.Slug);
 }

@@ -1,0 +1,67 @@
+@base_url = http://localhost:5046
+@contentType = application/json
+
+# Генерируем метку ОДИН РАЗ для всего файла
+@time = {{$timestamp}}
+
+### 1. Логин SuperAdmin
+# @name loginAdmin
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
+}
+
+###
+@adminToken = {{loginAdmin.response.body.$.token}}
+
+### 2. Создание уникальной группы
+# @name createGroup
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Amenities {{time}}",
+  "nameEs": "Comodidades {{time}}",
+  "slug": "amenities-{{time}}"
+}
+
+### 3. Создание второй группы
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Cuisine {{time}}",
+  "nameEs": "Cocina {{time}}",
+  "slug": "cuisine-{{time}}"
+}
+
+### 4. Получение списка (Поиск по точной метке времени)
+# Попробуем передать время как строку
+GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={"q":"{{time}}"}
+Authorization: Bearer {{adminToken}}
+
+### 4.1 Альтернативный поиск (Если вдруг первый не сработал)
+# Ищем просто слово "Amenities"
+GET {{base_url}}/api/tag-groups?filter={"q":"Amenities"}
+Authorization: Bearer {{adminToken}}
+
+### 5. Обновление группы
+@groupId = {{createGroup.response.body.$.id}}
+PUT {{base_url}}/api/tag-groups/{{groupId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Updated Amenities {{time}}",
+  "nameEs": "Comodidades actualizadas {{time}}",
+  "slug": "amenities-{{time}}"
+}
+
+### 6. Удаление (Убран лишний пробел перед Authorization)
+DELETE {{base_url}}/api/tag-groups/{{groupId}}
+Authorization: Bearer {{adminToken}}

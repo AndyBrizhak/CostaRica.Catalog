@@ -8,59 +8,12 @@ public static class TagEndpoints
 {
     public static void MapTagEndpoints(this IEndpointRouteBuilder app)
     {
-        // --- Группы тегов (Tag Groups) ---
-        var tagGroups = app.MapGroup("/api/tag-groups")
-            .WithTags("Tag Groups")
-            .RequireAuthorization("ManagementAccess") // Доступ: Manager+
-            .WithOpenApi();
-
-        tagGroups.MapGet("/", async (
-            [AsParameters] TagGroupQueryParameters parameters,
-            ITagGroupService service,
-            HttpContext context,
-            CancellationToken ct) =>
-        {
-            var (items, totalCount) = await service.GetAllAsync(parameters, ct);
-
-            context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
-            context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
-
-            return Results.Ok(items);
-        })
-        .WithName("GetTagGroups");
-
-        tagGroups.MapGet("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
-            await service.GetByIdAsync(id, ct) is { } tg ? Results.Ok(tg) : Results.NotFound())
-            .WithName("GetTagGroupById");
-
-        tagGroups.MapPost("/", async (TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
-        {
-            var result = await service.CreateAsync(dto, ct);
-            return result is null
-                ? Results.Conflict(new { error = "Группа с таким слагом уже существует." })
-                : Results.Created($"/api/tag-groups/{result.Id}", result);
-        })
-        .WithName("CreateTagGroup");
-
-        tagGroups.MapPut("/{id:guid}", async (Guid id, TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
-        {
-            var result = await service.UpdateAsync(id, dto, ct);
-            return result is not null ? Results.Ok(result) : Results.NotFound();
-        })
-        .WithName("UpdateTagGroup");
-
-        tagGroups.MapDelete("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
-            await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound())
-            .RequireAuthorization("AdminFullAccess") // Удаление: Admin+
-            .WithName("DeleteTagGroup");
-
-
-        // --- Теги (Tags) ---
         var tags = app.MapGroup("/api/tags")
             .WithTags("Tags")
             .RequireAuthorization("ManagementAccess") // Доступ: Manager+
             .WithOpenApi();
 
+        // GET /api/tags (List)
         tags.MapGet("/", async (
             [AsParameters] TagQueryParameters parameters,
             ITagService service,
@@ -76,10 +29,12 @@ public static class TagEndpoints
         })
         .WithName("GetTags");
 
+        // GET /api/tags/{id}
         tags.MapGet("/{id:guid}", async (Guid id, ITagService service, CancellationToken ct) =>
             await service.GetByIdAsync(id, ct) is { } tag ? Results.Ok(tag) : Results.NotFound())
             .WithName("GetTagById");
 
+        // POST /api/tags
         tags.MapPost("/", async (TagUpsertDto dto, ITagService service, CancellationToken ct) =>
         {
             var result = await service.CreateAsync(dto, ct);
@@ -91,6 +46,7 @@ public static class TagEndpoints
         })
         .WithName("CreateTag");
 
+        // PUT /api/tags/{id}
         tags.MapPut("/{id:guid}", async (Guid id, TagUpsertDto dto, ITagService service, CancellationToken ct) =>
         {
             var result = await service.UpdateAsync(id, dto, ct);
@@ -103,9 +59,10 @@ public static class TagEndpoints
         })
         .WithName("UpdateTag");
 
+        // DELETE /api/tags/{id}
         tags.MapDelete("/{id:guid}", async (Guid id, ITagService service, CancellationToken ct) =>
             await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound())
-            .RequireAuthorization("AdminFullAccess") // Удаление: Admin+
+            .RequireAuthorization("AdminFullAccess") // Удаление только для Admin
             .WithName("DeleteTag");
     }
 }

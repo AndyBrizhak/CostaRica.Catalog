@@ -24,15 +24,22 @@ public record TagGroupUpsertDto(
     [Required] string Slug);
 
 /// <summary>
-/// Параметры запроса для списка групп тегов (стандарт react-admin).
+/// Параметры запроса для списка групп тегов.
+/// Переведено в class для поддержки ручного парсинга JSON (filter, range, sort) в эндпоинтах.
 /// </summary>
-public record TagGroupQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "NameEn",
-    string? _order = "ASC",
-    string? NameEn = null,
-    string? NameEs = null,
-    string? Slug = null,
-    string? Q = null // Глобальный поиск
-);
+public class TagGroupQueryParameters
+{
+    // Стандартные параметры react-admin (пагинация и сортировка)
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 9;
+    public string? _sort { get; set; } = "NameEn";
+    public string? _order { get; set; } = "ASC";
+
+    // Точечные фильтры
+    public string? NameEn { get; set; }
+    public string? NameEs { get; set; }
+    public string? Slug { get; set; }
+
+    // Глобальный поиск (Q)
+    public string? Q { get; set; }
+}

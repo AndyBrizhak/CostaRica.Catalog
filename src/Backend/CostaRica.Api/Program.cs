@@ -212,6 +212,7 @@ app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapProvinceEndpoints();
 app.MapCityEndpoints();
+app.MapTagGroupEndpoints();
 app.MapTagEndpoints();
 app.MapGoogleCategoryEndpoints();
 app.MapMediaEndpoints();
