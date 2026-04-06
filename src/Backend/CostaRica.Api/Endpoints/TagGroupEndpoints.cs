@@ -1,7 +1,7 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
-using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
+using System.Net;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -13,15 +13,14 @@ public static class TagGroupEndpoints
             .WithTags("Tag Groups")
             .RequireAuthorization("ManagementAccess");
 
-        // GET /api/tag-groups (List)
         group.MapGet("/", async (HttpContext context, ITagGroupService service, CancellationToken ct) =>
         {
             var query = context.Request.Query;
             var parameters = new TagGroupQueryParameters();
 
             // 1. Парсинг Сортировки: sort=["NameEn","ASC"]
-            var sortJson = query["sort"].ToString();
-            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
+            var sortJson = WebUtility.UrlDecode(query["sort"].ToString());
+            if (!string.IsNullOrWhiteSpace(sortJson))
             {
                 try
                 {
@@ -32,12 +31,12 @@ public static class TagGroupEndpoints
                         parameters._order = sortArray[1].ToUpper();
                     }
                 }
-                catch { /* Игнорируем ошибки парсинга, оставляем default */ }
+                catch { }
             }
 
             // 2. Парсинг Пагинации: range=[0,9]
-            var rangeJson = query["range"].ToString();
-            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
+            var rangeJson = WebUtility.UrlDecode(query["range"].ToString());
+            if (!string.IsNullOrWhiteSpace(rangeJson))
             {
                 try
                 {
@@ -51,20 +50,23 @@ public static class TagGroupEndpoints
                 catch { }
             }
 
-            // 3. Парсинг Фильтров: filter={"q":"search","nameEn":"val"}
-            var filterJson = query["filter"].ToString();
-            if (!string.IsNullOrWhiteSpace(filterJson) && filterJson.StartsWith('{'))
+            // 3. Парсинг Фильтров: filter={"q":"123"}
+            var filterJson = WebUtility.UrlDecode(query["filter"].ToString());
+            if (!string.IsNullOrWhiteSpace(filterJson))
             {
                 try
                 {
                     using var doc = JsonDocument.Parse(filterJson);
                     var root = doc.RootElement;
 
-                    // Глобальный поиск (проверяем q и Q)
+                    // Глобальный поиск (Q/q). GetRawText + Trim позволяет забрать значение, даже если это число
                     if (root.TryGetProperty("q", out var qProp) || root.TryGetProperty("Q", out qProp))
-                        parameters.Q = qProp.GetString();
+                    {
+                        parameters.Q = qProp.ValueKind == JsonValueKind.String
+                            ? qProp.GetString()
+                            : qProp.GetRawText();
+                    }
 
-                    // Точечные фильтры
                     if (root.TryGetProperty("nameEn", out var neProp)) parameters.NameEn = neProp.GetString();
                     if (root.TryGetProperty("nameEs", out var nesProp)) parameters.NameEs = nesProp.GetString();
                     if (root.TryGetProperty("slug", out var sProp)) parameters.Slug = sProp.GetString();
@@ -74,7 +76,6 @@ public static class TagGroupEndpoints
 
             var (items, totalCount) = await service.GetAllAsync(parameters, ct);
 
-            // Обязательные заголовки для React Admin пагинации
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
@@ -82,34 +83,23 @@ public static class TagGroupEndpoints
         })
         .WithName("GetTagGroups");
 
-        // GET /api/tag-groups/{id}
+        // Остальные методы (GetById, Post, Put, Delete) остаются без изменений
         group.MapGet("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
-            await service.GetByIdAsync(id, ct) is { } res ? Results.Ok(res) : Results.NotFound())
-            .WithName("GetTagGroupById");
+            await service.GetByIdAsync(id, ct) is { } res ? Results.Ok(res) : Results.NotFound());
 
-        // POST /api/tag-groups
         group.MapPost("/", async (TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
         {
             var result = await service.CreateAsync(dto, ct);
-            return result is not null
-                ? Results.Created($"/api/tag-groups/{result.Id}", result)
-                : Results.Conflict(new { error = "Slug already exists" });
-        })
-        .WithName("CreateTagGroup");
+            return result is not null ? Results.Created($"/api/tag-groups/{result.Id}", result) : Results.Conflict();
+        });
 
-        // PUT /api/tag-groups/{id}
         group.MapPut("/{id:guid}", async (Guid id, TagGroupUpsertDto dto, ITagGroupService service, CancellationToken ct) =>
         {
             var result = await service.UpdateAsync(id, dto, ct);
             return result is not null ? Results.Ok(result) : Results.NotFound();
-        })
-        .WithName("UpdateTagGroup");
+        });
 
-        // DELETE /api/tag-groups/{id}
         group.MapDelete("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
-            await service.DeleteAsync(id, ct)
-                ? Results.NoContent()
-                : Results.BadRequest(new { error = "Cannot delete group: it is either not found or contains tags." }))
-            .WithName("DeleteTagGroup");
+            await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.BadRequest(new { error = "Cannot delete group with tags" }));
     }
 }

@@ -1,7 +1,10 @@
 @base_url = http://localhost:5046
 @contentType = application/json
 
-### 1. Логин SuperAdmin (для настройки ролей)
+# Генерируем метку ОДИН РАЗ для всего файла
+@time = {{$timestamp}}
+
+### 1. Логин SuperAdmin
 # @name loginAdmin
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
@@ -14,32 +17,37 @@ Content-Type: {{contentType}}
 ###
 @adminToken = {{loginAdmin.response.body.$.token}}
 
-### 2. Создание тестовой группы (Менеджер/Админ)
+### 2. Создание уникальной группы
 # @name createGroup
 POST {{base_url}}/api/tag-groups
 Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
 {
-  "nameEn": "Amenities",
-  "nameEs": "Comodidades",
-  "slug": "amenities"
+  "nameEn": "Amenities {{time}}",
+  "nameEs": "Comodidades {{time}}",
+  "slug": "amenities-{{time}}"
 }
 
-### 3. Создание еще одной группы
+### 3. Создание второй группы
 POST {{base_url}}/api/tag-groups
 Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
 {
-  "nameEn": "Cuisine",
-  "nameEs": "Cocina",
-  "slug": "cuisine"
+  "nameEn": "Cuisine {{time}}",
+  "nameEs": "Cocina {{time}}",
+  "slug": "cuisine-{{time}}"
 }
 
-### 4. Получение списка групп (Стандарт React Admin)
-# Проверка парсинга: пагинация, сортировка и поиск
-GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={"q":"amen"}
+### 4. Получение списка (Поиск по точной метке времени)
+# Попробуем передать время как строку
+GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={"q":"{{time}}"}
+Authorization: Bearer {{adminToken}}
+
+### 4.1 Альтернативный поиск (Если вдруг первый не сработал)
+# Ищем просто слово "Amenities"
+GET {{base_url}}/api/tag-groups?filter={"q":"Amenities"}
 Authorization: Bearer {{adminToken}}
 
 ### 5. Обновление группы
@@ -49,11 +57,11 @@ Authorization: Bearer {{adminToken}}
 Content-Type: {{contentType}}
 
 {
-  "nameEn": "Basic Amenities",
-  "nameEs": "Comodidades básicas",
-  "slug": "amenities"
+  "nameEn": "Updated Amenities {{time}}",
+  "nameEs": "Comodidades actualizadas {{time}}",
+  "slug": "amenities-{{time}}"
 }
 
-### 6. Попытка удаления (Если группа пуста — успех 204)
+### 6. Удаление (Убран лишний пробел перед Authorization)
 DELETE {{base_url}}/api/tag-groups/{{groupId}}
 Authorization: Bearer {{adminToken}}
