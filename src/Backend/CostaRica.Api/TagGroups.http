@@ -1,0 +1,59 @@
+@base_url = http://localhost:5046
+@contentType = application/json
+
+### 1. Логин SuperAdmin (для настройки ролей)
+# @name loginAdmin
+POST {{base_url}}/api/auth/login
+Content-Type: {{contentType}}
+
+{
+  "email": "admin@example.com",
+  "password": "ComplexPassword123!"
+}
+
+###
+@adminToken = {{loginAdmin.response.body.$.token}}
+
+### 2. Создание тестовой группы (Менеджер/Админ)
+# @name createGroup
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Amenities",
+  "nameEs": "Comodidades",
+  "slug": "amenities"
+}
+
+### 3. Создание еще одной группы
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Cuisine",
+  "nameEs": "Cocina",
+  "slug": "cuisine"
+}
+
+### 4. Получение списка групп (Стандарт React Admin)
+# Проверка парсинга: пагинация, сортировка и поиск
+GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={"q":"amen"}
+Authorization: Bearer {{adminToken}}
+
+### 5. Обновление группы
+@groupId = {{createGroup.response.body.$.id}}
+PUT {{base_url}}/api/tag-groups/{{groupId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Basic Amenities",
+  "nameEs": "Comodidades básicas",
+  "slug": "amenities"
+}
+
+### 6. Попытка удаления (Если группа пуста — успех 204)
+DELETE {{base_url}}/api/tag-groups/{{groupId}}
+Authorization: Bearer {{adminToken}}
