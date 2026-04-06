@@ -12,7 +12,7 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
             .AsNoTracking()
             .AsQueryable();
 
-        // 1. Глобальный поиск (Q) — приоритетный фильтр
+        // 1. Фильтрация: Глобальный поиск (Q)
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
             query = query.Where(tg =>
@@ -22,7 +22,7 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
         }
         else
         {
-            // 2. Точечные фильтры (если Q не задан)
+            // Точечные фильтры
             if (!string.IsNullOrWhiteSpace(parameters.NameEn))
                 query = query.Where(tg => EF.Functions.ILike(tg.NameEn, $"%{parameters.NameEn}%"));
 
@@ -35,12 +35,28 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
 
         var totalCount = await query.CountAsync(ct);
 
-        // 3. Сортировка (динамическая по полю)
-        query = parameters._order?.ToUpper() == "DESC"
-            ? query.OrderByDescending(tg => EF.Property<object>(tg, parameters._sort ?? "NameEn"))
-            : query.OrderBy(tg => EF.Property<object>(tg, parameters._sort ?? "NameEn"));
+        // 2. Сортировка (Золотой стандарт: исправление регистра для EF.Property)
+        var sortField = parameters._sort ?? "NameEn";
 
-        // 4. Пагинация (стандарт react-admin: [start, end])
+        // Если фронтенд прислал camelCase (например, "nameEn"), переводим в PascalCase ("NameEn")
+        if (!string.IsNullOrEmpty(sortField) && char.IsLower(sortField[0]))
+        {
+            sortField = char.ToUpper(sortField[0]) + sortField.Substring(1);
+        }
+
+        try
+        {
+            query = parameters._order?.ToUpper() == "DESC"
+                ? query.OrderByDescending(tg => EF.Property<object>(tg, sortField))
+                : query.OrderBy(tg => EF.Property<object>(tg, sortField));
+        }
+        catch (Exception)
+        {
+            // Фолбэк на случай, если поле вообще не существует
+            query = query.OrderBy(tg => tg.NameEn);
+        }
+
+        // 3. Пагинация
         var start = parameters._start ?? 0;
         var end = parameters._end ?? 9;
         var take = end - start + 1;
@@ -103,7 +119,6 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        // Загружаем группу вместе с тегами для проверки целостности
         var group = await db.TagGroups
             .Include(tg => tg.Tags)
             .FirstOrDefaultAsync(tg => tg.Id == id, ct);
