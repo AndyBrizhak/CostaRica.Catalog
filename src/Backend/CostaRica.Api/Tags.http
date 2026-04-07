@@ -2,7 +2,6 @@
 @contentType = application/json
 @time = {{$timestamp}}
 
-# 1. Авторизация
 # @name login
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
@@ -16,7 +15,7 @@ Content-Type: {{contentType}}
 
 @token = {{login.response.body.$.token}}
 
-# 2. Создаем Группу А
+# 1. Создаем Группу А
 # @name groupA
 POST {{base_url}}/api/tag-groups
 Authorization: Bearer {{token}}
@@ -32,7 +31,7 @@ Content-Type: {{contentType}}
 
 @idA = {{groupA.response.body.$.id}}
 
-# 3. Создаем Группу Б
+# 2. Создаем Группу Б
 # @name groupB
 POST {{base_url}}/api/tag-groups
 Authorization: Bearer {{token}}
@@ -48,7 +47,7 @@ Content-Type: {{contentType}}
 
 @idB = {{groupB.response.body.$.id}}
 
-# 4. Создаем Тег 1 в Группе А
+# 3. Создаем Тег в Группе А
 # @name tag1
 POST {{base_url}}/api/tags
 Authorization: Bearer {{token}}
@@ -63,7 +62,7 @@ Content-Type: {{contentType}}
 
 ###
 
-# 5. Создаем Тег 2 в Группе Б
+# 4. Создаем Тег в Группе Б
 # @name tag2
 POST {{base_url}}/api/tags
 Authorization: Bearer {{token}}
@@ -78,27 +77,19 @@ Content-Type: {{contentType}}
 
 ###
 
-# 6. ПОЛНЫЙ СПИСОК (Должны быть и Apple, и Banana)
-GET {{base_url}}/api/tags?sort=["nameEn","ASC"]&range=[0,9]
+# 5. ОБЩИЙ СПИСОК (Все теги из всех групп)
+GET {{base_url}}/api/tags?sort=["nameEn","ASC"]&range=[0,24]
 Authorization: Bearer {{token}}
 
 ###
 
-# 7. ФИЛЬТР ПО ГРУППЕ А (Должен остаться только Apple)
-GET {{base_url}}/api/tags?filter={"tagGroupId":"{{idA}}"}
+# 6. ФИЛЬТРАЦИЯ ПО ГРУППЕ А (Должен быть только Apple)
+@filterIdA = {{groupA.response.body.$.id}}
+GET {{base_url}}/api/tags?filter={"tagGroupId":"{{filterIdA}}"}
 Authorization: Bearer {{token}}
 
 ###
 
-# 8. ТЕСТ ЗАЩИТЫ УДАЛЕНИЯ (Conflict 409)
-# ВНИМАНИЕ: Сюда нужно вручную подставить ID тега, который привязан к бизнесу.
-# В автоматическом тесте это сделать нельзя, так как у нас нет API для связи тега с бизнесом.
-DELETE {{base_url}}/api/tags/00000000-0000-0000-0000-000000000000
-Authorization: Bearer {{token}}
-
-###
-
-# 9. ОЧИСТКА: Удаляем созданный Тег 1
-@deleteTagId = {{tag1.response.body.$.id}}
-DELETE {{base_url}}/api/tags/{{deleteTagId}}
+# 7. ПОИСК ПО НАЗВАНИЮ (Ищем Banana по метке времени)
+GET {{base_url}}/api/tags?filter={"q":"{{time}}"}
 Authorization: Bearer {{token}}
