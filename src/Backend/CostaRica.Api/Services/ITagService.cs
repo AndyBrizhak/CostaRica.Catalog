@@ -3,8 +3,18 @@
 namespace CostaRica.Api.Services;
 
 /// <summary>
+/// Возможные результаты удаления тега.
+/// </summary>
+public enum TagDeleteResult
+{
+    Success,
+    NotFound,
+    InUse
+}
+
+/// <summary>
 /// Интерфейс для управления тегами (Золотой стандарт).
-/// Обеспечивает интеграцию с React Admin.
+/// Обеспечивает интеграцию с React Admin и защиту целостности данных.
 /// </summary>
 public interface ITagService
 {
@@ -33,12 +43,15 @@ public interface ITagService
 
     /// <summary>
     /// Обновить данные тега. 
-    /// Возвращает актуальный объект (через GetByIdAsync) после сохранения.
+    /// Возвращает актуальный объект после сохранения.
     /// </summary>
     Task<TagResponseDto?> UpdateAsync(Guid id, TagUpsertDto dto, CancellationToken ct = default);
 
     /// <summary>
-    /// Удалить тег.
+    /// Удалить тег с проверкой зависимостей.
     /// </summary>
-    Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
+    /// <param name="id">ID тега.</param>
+    /// <param name="ct">Токен отмены.</param>
+    /// <returns>Статус операции (Success, NotFound или InUse).</returns>
+    Task<TagDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default);
 }

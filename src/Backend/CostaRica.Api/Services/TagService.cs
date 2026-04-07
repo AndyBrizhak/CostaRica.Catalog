@@ -19,7 +19,7 @@ public class TagService(DirectoryDbContext db) : ITagService
             query = query.Where(t => t.TagGroupId == parameters.TagGroupId.Value);
         }
 
-        // 2. Глобальный поиск (Q)
+        // 2. Глобальный поиск (Q) по NameEn, NameEs и Slug
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
             var search = $"%{parameters.Q}%";
@@ -128,25 +128,22 @@ public class TagService(DirectoryDbContext db) : ITagService
         return await GetByIdAsync(id, ct);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<TagDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var tag = await db.Tags.FindAsync([id], ct);
-        if (tag == null) return false;
+        if (tag == null) return TagDeleteResult.NotFound;
 
         // ПРОВЕРКА ЗАВИСИМОСТЕЙ:
-        // Проверяем, привязан ли тег к бизнес-страницам через навигационное свойство.
-        // Мы используем AnyAsync в коллекции Tags сущности BusinessPage.
+        // Проверяем, используется ли тег в коллекции Tags у бизнес-страниц (связь Many-to-Many).
         var isUsed = await db.BusinessPages.AnyAsync(bp => bp.Tags.Any(t => t.Id == id), ct);
         if (isUsed)
         {
-            // Возвращаем false. В текущем эндпоинте это вызовет NotFound, 
-            // что защитит БД от ошибки Foreign Key Violation.
-            return false;
+            return TagDeleteResult.InUse;
         }
 
         db.Tags.Remove(tag);
         await db.SaveChangesAsync(ct);
-        return true;
+        return TagDeleteResult.Success;
     }
 
     private static TagResponseDto MapToDto(Tag tag) =>

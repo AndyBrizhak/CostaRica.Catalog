@@ -46,7 +46,6 @@ public static class TagEndpoints
                     if (rangeArray?.Length == 2)
                     {
                         parameters._start = rangeArray[0];
-                        // React Admin присылает индекс последнего элемента включительно (0-9 это 10 элементов)
                         parameters._end = rangeArray[1] + 1;
                     }
                 }
@@ -62,7 +61,6 @@ public static class TagEndpoints
                     using var doc = JsonDocument.Parse(filterJson);
                     var root = doc.RootElement;
 
-                    // Глобальный поиск (поддержка q и Q согласно ТЗ)
                     if (root.TryGetProperty("q", out var qProp))
                     {
                         parameters.Q = qProp.GetString();
@@ -72,7 +70,6 @@ public static class TagEndpoints
                         parameters.Q = QProp.GetString();
                     }
 
-                    // Фильтр по группе
                     if (root.TryGetProperty("tagGroupId", out var groupProp) &&
                         Guid.TryParse(groupProp.GetString(), out var gGuid))
                     {
@@ -84,7 +81,6 @@ public static class TagEndpoints
 
             var (items, totalCount) = await service.GetAllAsync(parameters, ct);
 
-            // Добавляем заголовки для корректной работы пагинации в ra-data-simple-rest
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
@@ -124,8 +120,21 @@ public static class TagEndpoints
 
         // DELETE /api/tags/{id}
         tags.MapDelete("/{id:guid}", async (Guid id, ITagService service, CancellationToken ct) =>
-            await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound())
-            .RequireAuthorization("AdminFullAccess") // Удаление только для полных админов
-            .WithName("DeleteTag");
+        {
+            var result = await service.DeleteAsync(id, ct);
+
+            return result switch
+            {
+                TagDeleteResult.Success => Results.NoContent(),
+                TagDeleteResult.NotFound => Results.NotFound(),
+                TagDeleteResult.InUse => Results.Conflict(new
+                {
+                    error = "Cannot delete this tag because it is assigned to one or more business pages."
+                }),
+                _ => Results.BadRequest()
+            };
+        })
+        .RequireAuthorization("AdminFullAccess")
+        .WithName("DeleteTag");
     }
 }
