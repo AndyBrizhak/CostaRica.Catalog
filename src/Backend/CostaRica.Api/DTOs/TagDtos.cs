@@ -10,7 +10,8 @@ public record TagResponseDto(
     string NameEn,
     string NameEs,
     string Slug,
-    Guid TagGroupId);
+    Guid TagGroupId,
+    string? TagGroupName = null); // Добавлено для отображения и сортировки по имени группы
 
 /// <summary>
 /// Объект для создания или обновления тега.
@@ -23,15 +24,16 @@ public record TagUpsertDto(
 
 /// <summary>
 /// Параметры запроса для списка тегов (стандарт react-admin).
+/// Изменено на class для ручного наполнения данными при десериализации JSON в эндпоинтах.
 /// </summary>
-public record TagQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "NameEn",
-    string? _order = "ASC",
-    string? NameEn = null,
-    string? NameEs = null,
-    string? Slug = null,
-    Guid? TagGroupId = null, // Фильтр по родительской группе
-    string? Q = null         // Глобальный поиск
-);
+public class TagQueryParameters
+{
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 10;
+    public string? _sort { get; set; } = "NameEn";
+    public string? _order { get; set; } = "ASC";
+
+    // Фильтры
+    public Guid? TagGroupId { get; set; }
+    public string? Q { get; set; } // Глобальный поиск
+}

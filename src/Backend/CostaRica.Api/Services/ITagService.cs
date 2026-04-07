@@ -3,16 +3,16 @@
 namespace CostaRica.Api.Services;
 
 /// <summary>
-/// Интерфейс для управления тегами (стандарт react-admin).
+/// Интерфейс для управления тегами (Золотой стандарт).
+/// Обеспечивает интеграцию с React Admin.
 /// </summary>
 public interface ITagService
 {
     /// <summary>
-    /// Получить список тегов с поддержкой пагинации, фильтрации и поиска.
-    /// Фильтрация по TagGroupId теперь интегрирована сюда.
+    /// Получить список тегов с поддержкой пагинации, фильтрации и глобального поиска.
     /// </summary>
-    /// <param name="parameters">Параметры запроса (_start, _end, _sort, _order, TagGroupId, Q).</param>
-    /// <returns>Кортеж: список DTO и общее количество записей для заголовка X-Total-Count.</returns>
+    /// <param name="parameters">Параметры (_start, _end, _sort, _order, Q, TagGroupId).</param>
+    /// <returns>Кортеж: список DTO и общее количество записей.</returns>
     Task<(IEnumerable<TagResponseDto> Items, int TotalCount)> GetAllAsync(TagQueryParameters parameters, CancellationToken ct = default);
 
     /// <summary>
@@ -26,18 +26,19 @@ public interface ITagService
     Task<TagResponseDto?> GetBySlugAsync(string slug, CancellationToken ct = default);
 
     /// <summary>
-    /// Создать новый тег. Возвращает null, если слаг занят или родительская группа не найдена.
+    /// Создать новый тег. 
+    /// Возвращает null при конфликте слага или отсутствии группы.
     /// </summary>
     Task<TagResponseDto?> CreateAsync(TagUpsertDto dto, CancellationToken ct = default);
 
     /// <summary>
-    /// Обновить данные тега. Возвращает null при конфликте слага или если тег/группа не найдены.
+    /// Обновить данные тега. 
+    /// Возвращает актуальный объект (через GetByIdAsync) после сохранения.
     /// </summary>
     Task<TagResponseDto?> UpdateAsync(Guid id, TagUpsertDto dto, CancellationToken ct = default);
 
     /// <summary>
     /// Удалить тег.
     /// </summary>
-    /// <returns>True, если удаление успешно.</returns>
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
 }
