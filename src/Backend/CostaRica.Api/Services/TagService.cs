@@ -19,7 +19,7 @@ public class TagService(DirectoryDbContext db) : ITagService
             query = query.Where(t => t.TagGroupId == parameters.TagGroupId.Value);
         }
 
-        // 2. Глобальный поиск (Q) по трем полям
+        // 2. Глобальный поиск (Q)
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
             var search = $"%{parameters.Q}%";
@@ -44,7 +44,7 @@ public class TagService(DirectoryDbContext db) : ITagService
             _ => query.OrderBy(t => t.NameEn)
         };
 
-        // 4. Пагинация (на основе _start и _end)
+        // 4. Пагинация
         var start = parameters._start ?? 0;
         var end = parameters._end ?? 10;
         var take = end - start;
@@ -81,11 +81,9 @@ public class TagService(DirectoryDbContext db) : ITagService
 
     public async Task<TagResponseDto?> CreateAsync(TagUpsertDto dto, CancellationToken ct = default)
     {
-        // Проверка существования группы
         var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
         if (!groupExists) return null;
 
-        // Проверка уникальности слага
         var slugLower = dto.Slug.ToLowerInvariant();
         if (await db.Tags.AnyAsync(t => t.Slug == slugLower, ct)) return null;
 
@@ -101,7 +99,6 @@ public class TagService(DirectoryDbContext db) : ITagService
         db.Tags.Add(tag);
         await db.SaveChangesAsync(ct);
 
-        // Возвращаем полный объект с данными группы
         return await GetByIdAsync(tag.Id, ct);
     }
 
@@ -110,14 +107,12 @@ public class TagService(DirectoryDbContext db) : ITagService
         var tag = await db.Tags.FindAsync([id], ct);
         if (tag == null) return null;
 
-        // Если группа меняется, проверяем её наличие
         if (tag.TagGroupId != dto.TagGroupId)
         {
             var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
             if (!groupExists) return null;
         }
 
-        // Если слаг меняется, проверяем уникальность
         var slugLower = dto.Slug.ToLowerInvariant();
         if (tag.Slug != slugLower && await db.Tags.AnyAsync(t => t.Slug == slugLower, ct))
         {
@@ -130,8 +125,6 @@ public class TagService(DirectoryDbContext db) : ITagService
         tag.TagGroupId = dto.TagGroupId;
 
         await db.SaveChangesAsync(ct);
-
-        // Возвращаем актуальные данные через GetByIdAsync для фронтенда
         return await GetByIdAsync(id, ct);
     }
 
@@ -139,6 +132,17 @@ public class TagService(DirectoryDbContext db) : ITagService
     {
         var tag = await db.Tags.FindAsync([id], ct);
         if (tag == null) return false;
+
+        // ПРОВЕРКА ЗАВИСИМОСТЕЙ:
+        // Проверяем, привязан ли тег к бизнес-страницам через навигационное свойство.
+        // Мы используем AnyAsync в коллекции Tags сущности BusinessPage.
+        var isUsed = await db.BusinessPages.AnyAsync(bp => bp.Tags.Any(t => t.Id == id), ct);
+        if (isUsed)
+        {
+            // Возвращаем false. В текущем эндпоинте это вызовет NotFound, 
+            // что защитит БД от ошибки Foreign Key Violation.
+            return false;
+        }
 
         db.Tags.Remove(tag);
         await db.SaveChangesAsync(ct);
