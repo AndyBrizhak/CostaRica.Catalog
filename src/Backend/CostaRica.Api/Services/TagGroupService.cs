@@ -35,50 +35,40 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
 
         var totalCount = await query.CountAsync(ct);
 
-        // 2. Сортировка (Золотой стандарт: исправление регистра для EF.Property)
-        var sortField = parameters._sort ?? "NameEn";
+        // 2. Сортировка
+        var sortField = parameters._sort?.ToLower() ?? "nameen";
+        var isAscending = parameters._order?.ToUpper() == "ASC";
 
-        // Если фронтенд прислал camelCase (например, "nameEn"), переводим в PascalCase ("NameEn")
-        if (!string.IsNullOrEmpty(sortField) && char.IsLower(sortField[0]))
+        query = sortField switch
         {
-            sortField = char.ToUpper(sortField[0]) + sortField.Substring(1);
-        }
-
-        try
-        {
-            query = parameters._order?.ToUpper() == "DESC"
-                ? query.OrderByDescending(tg => EF.Property<object>(tg, sortField))
-                : query.OrderBy(tg => EF.Property<object>(tg, sortField));
-        }
-        catch (Exception)
-        {
-            // Фолбэк на случай, если поле вообще не существует
-            query = query.OrderBy(tg => tg.NameEn);
-        }
+            "namees" => isAscending ? query.OrderBy(tg => tg.NameEs) : query.OrderByDescending(tg => tg.NameEs),
+            "slug" => isAscending ? query.OrderBy(tg => tg.Slug) : query.OrderByDescending(tg => tg.Slug),
+            _ => isAscending ? query.OrderBy(tg => tg.NameEn) : query.OrderByDescending(tg => tg.NameEn)
+        };
 
         // 3. Пагинация
-        var start = parameters._start ?? 0;
-        var end = parameters._end ?? 9;
-        var take = end - start + 1;
+        var skip = parameters._start ?? 0;
+        var take = (parameters._end ?? 9) - skip + 1;
 
         var items = await query
-            .Skip(start)
-            .Take(take > 0 ? take : 10)
+            .Skip(skip)
+            .Take(take)
+            .Select(tg => new TagGroupResponseDto(tg.Id, tg.NameEn, tg.NameEs, tg.Slug))
             .ToListAsync(ct);
 
-        return (items.Select(MapToDto), totalCount);
+        return (items, totalCount);
     }
 
     public async Task<TagGroupResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        var group = await db.TagGroups.FindAsync([id], ct);
-        return group != null ? MapToDto(group) : null;
+        var tg = await db.TagGroups.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        return tg != null ? new TagGroupResponseDto(tg.Id, tg.NameEn, tg.NameEs, tg.Slug) : null;
     }
 
     public async Task<TagGroupResponseDto?> GetBySlugAsync(string slug, CancellationToken ct = default)
     {
-        var group = await db.TagGroups.FirstOrDefaultAsync(tg => tg.Slug == slug.ToLower(), ct);
-        return group != null ? MapToDto(group) : null;
+        var tg = await db.TagGroups.AsNoTracking().FirstOrDefaultAsync(x => x.Slug == slug, ct);
+        return tg != null ? new TagGroupResponseDto(tg.Id, tg.NameEn, tg.NameEs, tg.Slug) : null;
     }
 
     public async Task<TagGroupResponseDto?> CreateAsync(TagGroupUpsertDto dto, CancellationToken ct = default)
@@ -117,19 +107,21 @@ public class TagGroupService(DirectoryDbContext db) : ITagGroupService
         return await GetByIdAsync(id, ct);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<TagGroupDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var group = await db.TagGroups
             .Include(tg => tg.Tags)
             .FirstOrDefaultAsync(tg => tg.Id == id, ct);
 
-        if (group == null || group.Tags.Any()) return false;
+        if (group == null)
+            return TagGroupDeleteResult.NotFound;
+
+        if (group.Tags.Any())
+            return TagGroupDeleteResult.InUse;
 
         db.TagGroups.Remove(group);
         await db.SaveChangesAsync(ct);
-        return true;
-    }
 
-    private static TagGroupResponseDto MapToDto(TagGroup tg) =>
-        new(tg.Id, tg.NameEn, tg.NameEs, tg.Slug);
+        return TagGroupDeleteResult.Success;
+    }
 }
