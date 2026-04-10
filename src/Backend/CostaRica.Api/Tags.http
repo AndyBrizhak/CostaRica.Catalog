@@ -1,7 +1,7 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
+@time = {{$timestamp}}
 
-### 1. Логин
 # @name login
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
@@ -12,33 +12,84 @@ Content-Type: {{contentType}}
 }
 
 ###
+
 @token = {{login.response.body.$.token}}
 
-### 2. Получение ID существующей группы (нужно для создания тега)
-# @name getGroups
-GET {{base_url}}/api/tag-groups
+# 1. Создаем Группу А
+# @name groupA
+POST {{base_url}}/api/tag-groups
 Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Group A {{time}}",
+  "nameEs": "Grupo A {{time}}",
+  "slug": "group-a-{{time}}"
+}
 
 ###
-@groupId = {{getGroups.response.body.[0].id}}
 
-### 3. Создание тега внутри группы
-# @name createTag
+@idA = {{groupA.response.body.$.id}}
+
+# 2. Создаем Группу Б
+# @name groupB
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Group B {{time}}",
+  "nameEs": "Grupo B {{time}}",
+  "slug": "group-b-{{time}}"
+}
+
+###
+
+@idB = {{groupB.response.body.$.id}}
+
+# 3. Создаем Тег в Группе А
+# @name tag1
 POST {{base_url}}/api/tags
 Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
-  "nameEn": "Free WiFi",
-  "nameEs": "WiFi gratis",
-  "slug": "free-wifi",
-  "tagGroupId": "{{groupId}}"
+  "nameEn": "Apple {{time}}",
+  "nameEs": "Manzana {{time}}",
+  "slug": "apple-{{time}}",
+  "tagGroupId": "{{idA}}"
 }
 
-### 4. Получение списка тегов с фильтром по группе
-GET {{base_url}}/api/tags?filter={"tagGroupId":"{{groupId}}"}
+###
+
+# 4. Создаем Тег в Группе Б
+# @name tag2
+POST {{base_url}}/api/tags
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Banana {{time}}",
+  "nameEs": "Platano {{time}}",
+  "slug": "banana-{{time}}",
+  "tagGroupId": "{{idB}}"
+}
+
+###
+
+# 5. ОБЩИЙ СПИСОК (Все теги из всех групп)
+GET {{base_url}}/api/tags?sort=["nameEn","ASC"]&range=[0,24]
 Authorization: Bearer {{token}}
 
-### 5. Глобальный поиск по тегам
-GET {{base_url}}/api/tags?filter={"q":"wifi"}
+###
+
+# 6. ФИЛЬТРАЦИЯ ПО ГРУППЕ А (Должен быть только Apple)
+@filterIdA = {{groupA.response.body.$.id}}
+GET {{base_url}}/api/tags?filter={"tagGroupId":"{{filterIdA}}"}
+Authorization: Bearer {{token}}
+
+###
+
+# 7. ПОИСК ПО НАЗВАНИЮ (Ищем Banana по метке времени)
+GET {{base_url}}/api/tags?filter={"q":"{{time}}"}
 Authorization: Bearer {{token}}

@@ -1,6 +1,7 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -14,12 +15,70 @@ public static class TagEndpoints
             .WithOpenApi();
 
         // GET /api/tags (List)
-        tags.MapGet("/", async (
-            [AsParameters] TagQueryParameters parameters,
-            ITagService service,
-            HttpContext context,
-            CancellationToken ct) =>
+        tags.MapGet("/", async (HttpContext context, ITagService service, CancellationToken ct) =>
         {
+            var query = context.Request.Query;
+            var parameters = new TagQueryParameters();
+
+            // 1. Сортировка sort=["field","ORDER"]
+            var sortJson = query["sort"].ToString();
+            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
+            {
+                try
+                {
+                    var sortArray = JsonSerializer.Deserialize<string[]>(sortJson);
+                    if (sortArray?.Length == 2)
+                    {
+                        parameters._sort = sortArray[0];
+                        parameters._order = sortArray[1].ToUpper();
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Пагинация range=[0,9]
+            var rangeJson = query["range"].ToString();
+            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
+            {
+                try
+                {
+                    var rangeArray = JsonSerializer.Deserialize<int[]>(rangeJson);
+                    if (rangeArray?.Length == 2)
+                    {
+                        parameters._start = rangeArray[0];
+                        parameters._end = rangeArray[1] + 1;
+                    }
+                }
+                catch { }
+            }
+
+            // 3. Фильтрация filter={"q":"...", "tagGroupId":"..."}
+            var filterJson = query["filter"].ToString();
+            if (!string.IsNullOrWhiteSpace(filterJson) && filterJson.StartsWith('{'))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(filterJson);
+                    var root = doc.RootElement;
+
+                    if (root.TryGetProperty("q", out var qProp))
+                    {
+                        parameters.Q = qProp.GetString();
+                    }
+                    else if (root.TryGetProperty("Q", out var QProp))
+                    {
+                        parameters.Q = QProp.GetString();
+                    }
+
+                    if (root.TryGetProperty("tagGroupId", out var groupProp) &&
+                        Guid.TryParse(groupProp.GetString(), out var gGuid))
+                    {
+                        parameters.TagGroupId = gGuid;
+                    }
+                }
+                catch { }
+            }
+
             var (items, totalCount) = await service.GetAllAsync(parameters, ct);
 
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
@@ -61,8 +120,21 @@ public static class TagEndpoints
 
         // DELETE /api/tags/{id}
         tags.MapDelete("/{id:guid}", async (Guid id, ITagService service, CancellationToken ct) =>
-            await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound())
-            .RequireAuthorization("AdminFullAccess") // Удаление только для Admin
-            .WithName("DeleteTag");
+        {
+            var result = await service.DeleteAsync(id, ct);
+
+            return result switch
+            {
+                TagDeleteResult.Success => Results.NoContent(),
+                TagDeleteResult.NotFound => Results.NotFound(),
+                TagDeleteResult.InUse => Results.Conflict(new
+                {
+                    error = "Cannot delete this tag because it is assigned to one or more business pages."
+                }),
+                _ => Results.BadRequest()
+            };
+        })
+        .RequireAuthorization("AdminFullAccess")
+        .WithName("DeleteTag");
     }
 }

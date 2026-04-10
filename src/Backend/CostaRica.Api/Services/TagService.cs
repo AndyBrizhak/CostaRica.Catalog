@@ -10,64 +10,80 @@ public class TagService(DirectoryDbContext db) : ITagService
     {
         var query = db.Tags
             .AsNoTracking()
+            .Include(t => t.TagGroup)
             .AsQueryable();
 
-        if (parameters.TagGroupId.HasValue)
+        // 1. Фильтрация по группе
+        if (parameters.TagGroupId.HasValue && parameters.TagGroupId != Guid.Empty)
         {
             query = query.Where(t => t.TagGroupId == parameters.TagGroupId.Value);
         }
 
-        if (!string.IsNullOrWhiteSpace(parameters.NameEn))
+        // 2. Глобальный поиск (Q) по NameEn, NameEs и Slug
+        if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
-            var filter = parameters.NameEn.ToLower();
-            query = query.Where(t => t.NameEn.ToLower().Contains(filter));
-        }
-
-        if (!string.IsNullOrWhiteSpace(parameters.Slug))
-        {
-            var filter = parameters.Slug.ToLower();
-            query = query.Where(t => t.Slug.Contains(filter));
+            var search = $"%{parameters.Q}%";
+            query = query.Where(t =>
+                EF.Functions.ILike(t.NameEn, search) ||
+                EF.Functions.ILike(t.NameEs, search) ||
+                EF.Functions.ILike(t.Slug, search));
         }
 
         var totalCount = await query.CountAsync(ct);
 
-        // Обработка пагинации (стандарт react-admin)
+        // 3. Динамическая сортировка
+        var isDescending = string.Equals(parameters._order, "DESC", StringComparison.OrdinalIgnoreCase);
+        var sortField = parameters._sort?.ToLowerInvariant() ?? "nameen";
+
+        query = sortField switch
+        {
+            "nameen" => isDescending ? query.OrderByDescending(t => t.NameEn) : query.OrderBy(t => t.NameEn),
+            "namees" => isDescending ? query.OrderByDescending(t => t.NameEs) : query.OrderBy(t => t.NameEs),
+            "slug" => isDescending ? query.OrderByDescending(t => t.Slug) : query.OrderBy(t => t.Slug),
+            "taggroupname" => isDescending ? query.OrderByDescending(t => t.TagGroup!.NameEn) : query.OrderBy(t => t.TagGroup!.NameEn),
+            _ => query.OrderBy(t => t.NameEn)
+        };
+
+        // 4. Пагинация
         var start = parameters._start ?? 0;
         var end = parameters._end ?? 10;
+        var take = end - start;
+        if (take < 0) take = 0;
 
-        query = query.OrderBy(t => t.NameEn)
-                     .Skip(start)
-                     .Take(end - start);
+        var items = await query
+            .Skip(start)
+            .Take(take)
+            .Select(t => MapToDto(t))
+            .ToListAsync(ct);
 
-        var items = await query.ToListAsync(ct);
-        return (items.Select(MapToDto), totalCount);
+        return (items, totalCount);
     }
 
     public async Task<TagResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         var tag = await db.Tags
             .AsNoTracking()
+            .Include(t => t.TagGroup)
             .FirstOrDefaultAsync(t => t.Id == id, ct);
 
-        return tag == null ? null : MapToDto(tag);
+        return tag != null ? MapToDto(tag) : null;
     }
 
     public async Task<TagResponseDto?> GetBySlugAsync(string slug, CancellationToken ct = default)
     {
         var tag = await db.Tags
             .AsNoTracking()
+            .Include(t => t.TagGroup)
             .FirstOrDefaultAsync(t => t.Slug == slug.ToLowerInvariant(), ct);
 
-        return tag == null ? null : MapToDto(tag);
+        return tag != null ? MapToDto(tag) : null;
     }
 
     public async Task<TagResponseDto?> CreateAsync(TagUpsertDto dto, CancellationToken ct = default)
     {
-        // 1. Проверка существования родительской группы
         var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
         if (!groupExists) return null;
 
-        // 2. Проверка уникальности слага
         var slugLower = dto.Slug.ToLowerInvariant();
         if (await db.Tags.AnyAsync(t => t.Slug == slugLower, ct)) return null;
 
@@ -81,16 +97,9 @@ public class TagService(DirectoryDbContext db) : ITagService
         };
 
         db.Tags.Add(tag);
+        await db.SaveChangesAsync(ct);
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return MapToDto(tag);
-        }
-        catch (DbUpdateException)
-        {
-            return null;
-        }
+        return await GetByIdAsync(tag.Id, ct);
     }
 
     public async Task<TagResponseDto?> UpdateAsync(Guid id, TagUpsertDto dto, CancellationToken ct = default)
@@ -98,7 +107,6 @@ public class TagService(DirectoryDbContext db) : ITagService
         var tag = await db.Tags.FindAsync([id], ct);
         if (tag == null) return null;
 
-        // Если группа меняется, проверяем её существование
         if (tag.TagGroupId != dto.TagGroupId)
         {
             var groupExists = await db.TagGroups.AnyAsync(tg => tg.Id == dto.TagGroupId, ct);
@@ -116,40 +124,28 @@ public class TagService(DirectoryDbContext db) : ITagService
         tag.Slug = slugLower;
         tag.TagGroupId = dto.TagGroupId;
 
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return MapToDto(tag);
-        }
-        catch (DbUpdateException)
-        {
-            return null;
-        }
+        await db.SaveChangesAsync(ct);
+        return await GetByIdAsync(id, ct);
     }
 
-    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    public async Task<TagDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         var tag = await db.Tags.FindAsync([id], ct);
-        if (tag == null) return false;
+        if (tag == null) return TagDeleteResult.NotFound;
+
+        // ПРОВЕРКА ЗАВИСИМОСТЕЙ:
+        // Проверяем, используется ли тег в коллекции Tags у бизнес-страниц (связь Many-to-Many).
+        var isUsed = await db.BusinessPages.AnyAsync(bp => bp.Tags.Any(t => t.Id == id), ct);
+        if (isUsed)
+        {
+            return TagDeleteResult.InUse;
+        }
 
         db.Tags.Remove(tag);
-
-        try
-        {
-            await db.SaveChangesAsync(ct);
-            return true;
-        }
-        catch (DbUpdateException)
-        {
-            return false;
-        }
+        await db.SaveChangesAsync(ct);
+        return TagDeleteResult.Success;
     }
 
-    private static TagResponseDto MapToDto(Tag t) => new(
-        t.Id,
-        t.NameEn,
-        t.NameEs,
-        t.Slug,
-        t.TagGroupId
-    );
+    private static TagResponseDto MapToDto(Tag tag) =>
+        new(tag.Id, tag.NameEn, tag.NameEs, tag.Slug, tag.TagGroupId, tag.TagGroup?.NameEn);
 }
