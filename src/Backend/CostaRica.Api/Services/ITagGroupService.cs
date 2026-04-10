@@ -39,7 +39,7 @@ public interface ITagGroupService
 
     /// <summary>
     /// Удалить группу тегов. 
-    /// Возвращает false, если группа не найдена или содержит связанные теги (защита целостности).
+    /// Возвращает результат операции: Success, NotFound или InUse.
     /// </summary>
-    Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
+    Task<TagGroupDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default);
 }

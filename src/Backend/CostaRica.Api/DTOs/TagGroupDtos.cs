@@ -3,6 +3,16 @@
 namespace CostaRica.Api.DTOs;
 
 /// <summary>
+/// Результат операции удаления группы тегов.
+/// </summary>
+public enum TagGroupDeleteResult
+{
+    Success,
+    NotFound,
+    InUse
+}
+
+/// <summary>
 /// Объект ответа для группы тегов (стандарт react-admin).
 /// </summary>
 /// <param name="Id">Уникальный идентификатор группы.</param>
@@ -35,11 +45,11 @@ public class TagGroupQueryParameters
     public string? _sort { get; set; } = "NameEn";
     public string? _order { get; set; } = "ASC";
 
-    // Точечные фильтры
+    // Глобальный поиск (react-admin передает параметр q)
+    public string? Q { get; set; }
+
+    // Точечные фильтры по конкретным полям
     public string? NameEn { get; set; }
     public string? NameEs { get; set; }
     public string? Slug { get; set; }
-
-    // Глобальный поиск (Q)
-    public string? Q { get; set; }
 }

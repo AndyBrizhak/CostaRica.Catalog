@@ -50,7 +50,7 @@ public static class TagGroupEndpoints
                 catch { }
             }
 
-            // 3. Парсинг Фильтров: filter={"q":"123"}
+            // 3. Глобальный поиск и точечные фильтры: filter={"q":"food"}
             var filterJson = WebUtility.UrlDecode(query["filter"].ToString());
             if (!string.IsNullOrWhiteSpace(filterJson))
             {
@@ -59,17 +59,14 @@ public static class TagGroupEndpoints
                     using var doc = JsonDocument.Parse(filterJson);
                     var root = doc.RootElement;
 
-                    // Глобальный поиск (Q/q). GetRawText + Trim позволяет забрать значение, даже если это число
-                    if (root.TryGetProperty("q", out var qProp) || root.TryGetProperty("Q", out qProp))
-                    {
-                        parameters.Q = qProp.ValueKind == JsonValueKind.String
-                            ? qProp.GetString()
-                            : qProp.GetRawText();
-                    }
-
-                    if (root.TryGetProperty("nameEn", out var neProp)) parameters.NameEn = neProp.GetString();
-                    if (root.TryGetProperty("nameEs", out var nesProp)) parameters.NameEs = nesProp.GetString();
-                    if (root.TryGetProperty("slug", out var sProp)) parameters.Slug = sProp.GetString();
+                    if (root.TryGetProperty("q", out var qProp))
+                        parameters.Q = qProp.GetString();
+                    if (root.TryGetProperty("nameEn", out var nameEnProp))
+                        parameters.NameEn = nameEnProp.GetString();
+                    if (root.TryGetProperty("nameEs", out var nameEsProp))
+                        parameters.NameEs = nameEsProp.GetString();
+                    if (root.TryGetProperty("slug", out var slugProp))
+                        parameters.Slug = slugProp.GetString();
                 }
                 catch { }
             }
@@ -83,7 +80,6 @@ public static class TagGroupEndpoints
         })
         .WithName("GetTagGroups");
 
-        // Остальные методы (GetById, Post, Put, Delete) остаются без изменений
         group.MapGet("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
             await service.GetByIdAsync(id, ct) is { } res ? Results.Ok(res) : Results.NotFound());
 
@@ -99,7 +95,17 @@ public static class TagGroupEndpoints
             return result is not null ? Results.Ok(result) : Results.NotFound();
         });
 
+        // ОБНОВЛЕННЫЙ ЭНДПОИНТ УДАЛЕНИЯ
         group.MapDelete("/{id:guid}", async (Guid id, ITagGroupService service, CancellationToken ct) =>
-            await service.DeleteAsync(id, ct) ? Results.NoContent() : Results.BadRequest(new { error = "Cannot delete group with tags" }));
+        {
+            var result = await service.DeleteAsync(id, ct);
+            return result switch
+            {
+                TagGroupDeleteResult.Success => Results.NoContent(),
+                TagGroupDeleteResult.NotFound => Results.NotFound(),
+                TagGroupDeleteResult.InUse => Results.Conflict(new { error = "Cannot delete this tag group because it contains tags." }),
+                _ => Results.BadRequest()
+            };
+        });
     }
 }

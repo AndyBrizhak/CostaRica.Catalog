@@ -1,10 +1,13 @@
 @base_url = http://localhost:5046
 @contentType = application/json
 
-# Генерируем метку ОДИН РАЗ для всего файла
+# Генерируем уникальную метку для предотвращения конфликтов слагов
 @time = {{$timestamp}}
 
-### 1. Логин SuperAdmin
+### ==========================================
+### 1. АВТОРИЗАЦИЯ
+### ==========================================
+
 # @name loginAdmin
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
@@ -14,13 +17,17 @@ Content-Type: {{contentType}}
   "password": "ComplexPassword123!"
 }
 
-###
-@adminToken = {{loginAdmin.response.body.$.token}}
+### Извлекаем токен
+@token = {{loginAdmin.response.body.$.token}}
 
-### 2. Создание уникальной группы
-# @name createGroup
+### ==========================================
+### 2. СОЗДАНИЕ ГРУПП ТЕГОВ (CREATE)
+### ==========================================
+
+### Создание Группы А (с ней будем тестировать удаление)
+# @name createGroupA
 POST {{base_url}}/api/tag-groups
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
@@ -29,9 +36,13 @@ Content-Type: {{contentType}}
   "slug": "amenities-{{time}}"
 }
 
-### 3. Создание второй группы
+###
+@groupIdA = {{createGroupA.response.body.$.id}}
+
+### Создание Группы B (с ней будем тестировать обновление)
+# @name createGroupB
 POST {{base_url}}/api/tag-groups
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
@@ -40,28 +51,102 @@ Content-Type: {{contentType}}
   "slug": "cuisine-{{time}}"
 }
 
-### 4. Получение списка (Поиск по точной метке времени)
-# Попробуем передать время как строку
-GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={"q":"{{time}}"}
-Authorization: Bearer {{adminToken}}
+###
+@groupIdB = {{createGroupB.response.body.$.id}}
 
-### 4.1 Альтернативный поиск (Если вдруг первый не сработал)
-# Ищем просто слово "Amenities"
-GET {{base_url}}/api/tag-groups?filter={"q":"Amenities"}
-Authorization: Bearer {{adminToken}}
 
-### 5. Обновление группы
-@groupId = {{createGroup.response.body.$.id}}
-PUT {{base_url}}/api/tag-groups/{{groupId}}
-Authorization: Bearer {{adminToken}}
+### ==========================================
+### 3. СОЗДАНИЕ ТЕГОВ (ДЛЯ ПРОВЕРКИ SAFE DELETE)
+### ==========================================
+
+### Создаем Тег 1 в Группе А
+# @name createTag1
+POST {{base_url}}/api/tags
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
-  "nameEn": "Updated Amenities {{time}}",
-  "nameEs": "Comodidades actualizadas {{time}}",
-  "slug": "amenities-{{time}}"
+  "nameEn": "WiFi {{time}}",
+  "nameEs": "WiFi {{time}}",
+  "slug": "wifi-{{time}}",
+  "tagGroupId": "{{groupIdA}}"
 }
 
-### 6. Удаление (Убран лишний пробел перед Authorization)
-DELETE {{base_url}}/api/tag-groups/{{groupId}}
-Authorization: Bearer {{adminToken}}
+###
+@tag1Id = {{createTag1.response.body.$.id}}
+
+### Создаем Тег 2 в Группе А
+# @name createTag2
+POST {{base_url}}/api/tags
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Pool {{time}}",
+  "nameEs": "Piscina {{time}}",
+  "slug": "pool-{{time}}",
+  "tagGroupId": "{{groupIdA}}"
+}
+
+###
+@tag2Id = {{createTag2.response.body.$.id}}
+
+
+### ==========================================
+### 4. ПОЛУЧЕНИЕ ДАННЫХ (READ / LIST)
+### ==========================================
+
+### Получение списка (Имитация стартовой загрузки React Admin: без фильтра)
+GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={}
+Authorization: Bearer {{token}}
+
+### Получение списка (Имитация поиска: ищем статичное слово "Amenities")
+GET {{base_url}}/api/tag-groups?range=[0,9]&sort=["nameEn","ASC"]&filter={"q":"Amenities"}
+Authorization: Bearer {{token}}
+
+### Получение одной группы по ID
+GET {{base_url}}/api/tag-groups/{{groupIdA}}
+Authorization: Bearer {{token}}
+
+
+### ==========================================
+### 5. ОБНОВЛЕНИЕ ДАННЫХ (UPDATE)
+### ==========================================
+
+### Обновление Группы B
+PUT {{base_url}}/api/tag-groups/{{groupIdB}}
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Cuisine Updated {{time}}",
+  "nameEs": "Cocina Actualizada {{time}}",
+  "slug": "cuisine-updated-{{time}}"
+}
+
+
+### ==========================================
+### 6. УДАЛЕНИЕ И ПРОВЕРКА SAFE DELETE (DELETE)
+### ==========================================
+
+### ТЕСТ 1: Ожидается 409 Conflict
+# Пытаемся удалить Группу А (в ней лежат 2 тега)
+DELETE {{base_url}}/api/tag-groups/{{groupIdA}}
+Authorization: Bearer {{token}}
+
+### ОЧИСТКА: Удаляем теги из Группы А
+DELETE {{base_url}}/api/tags/{{tag1Id}}
+Authorization: Bearer {{token}}
+
+###
+DELETE {{base_url}}/api/tags/{{tag2Id}}
+Authorization: Bearer {{token}}
+
+### ТЕСТ 2: Ожидается 204 No Content
+# Теперь Группа А пустая. Удаление должно пройти успешно.
+DELETE {{base_url}}/api/tag-groups/{{groupIdA}}
+Authorization: Bearer {{token}}
+
+### Удаляем Группу B (Очистка мусора)
+DELETE {{base_url}}/api/tag-groups/{{groupIdB}}
+Authorization: Bearer {{token}}
