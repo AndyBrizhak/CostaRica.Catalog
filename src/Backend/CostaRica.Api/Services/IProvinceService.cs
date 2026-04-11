@@ -3,6 +3,16 @@
 namespace CostaRica.Api.Services;
 
 /// <summary>
+/// Результат операции удаления провинции
+/// </summary>
+public enum ProvinceDeleteResult
+{
+    Success,
+    NotFound,
+    InUse
+}
+
+/// <summary>
 /// Интерфейс для управления бизнес-логикой провинций.
 /// </summary>
 public interface IProvinceService
@@ -31,7 +41,7 @@ public interface IProvinceService
 
     /// <summary>
     /// Удалить провинцию. 
-    /// Метод должен реализовывать проверку на наличие связанных городов (FK Check).
+    /// Возвращает детализированный результат операции для предотвращения нарушения внешних ключей (города, бизнес-страницы).
     /// </summary>
-    Task<bool> DeleteAsync(Guid id);
+    Task<ProvinceDeleteResult> DeleteAsync(Guid id);
 }
