@@ -36,28 +36,30 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
         query = @params.Sort?.ToLower() switch
         {
             "slug" => isAscending ? query.OrderBy(p => p.Slug) : query.OrderByDescending(p => p.Slug),
-            "name" or _ => isAscending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name)
+            _ => isAscending ? query.OrderBy(p => p.Name) : query.OrderByDescending(p => p.Name)
         };
 
         // 5. Пагинация
-        var start = @params.Start ?? 0;
-        var end = @params.End ?? 10;
-        var take = end - start;
+        if (@params.Start.HasValue && @params.End.HasValue)
+        {
+            var skip = @params.Start.Value;
+            var take = @params.End.Value - @params.Start.Value;
+            query = query.Skip(skip).Take(take);
+        }
 
-        var items = await query
-            .Skip(start)
-            .Take(take > 0 ? take : 10)
-            .ToListAsync();
+        var items = await query.ToListAsync();
 
-        var dtos = items.Select(p => MapToDto(p, includeCities));
-
-        return (dtos, totalCount);
+        return (items.Select(p => MapToDto(p, includeCities)), totalCount);
     }
 
     public async Task<ProvinceResponseDto?> GetByIdAsync(Guid id, bool includeCities = false)
     {
-        var query = db.Provinces.AsNoTracking().AsQueryable();
-        if (includeCities) query = query.Include(p => p.Cities);
+        var query = db.Provinces.AsNoTracking();
+
+        if (includeCities)
+        {
+            query = query.Include(p => p.Cities);
+        }
 
         var province = await query.FirstOrDefaultAsync(p => p.Id == id);
         return province is null ? null : MapToDto(province, includeCities);
@@ -65,8 +67,12 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
 
     public async Task<ProvinceResponseDto?> GetBySlugAsync(string slug, bool includeCities = false)
     {
-        var query = db.Provinces.AsNoTracking().AsQueryable();
-        if (includeCities) query = query.Include(p => p.Cities);
+        var query = db.Provinces.AsNoTracking();
+
+        if (includeCities)
+        {
+            query = query.Include(p => p.Cities);
+        }
 
         var province = await query.FirstOrDefaultAsync(p => p.Slug == slug);
         return province is null ? null : MapToDto(province, includeCities);
@@ -74,8 +80,8 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
 
     public async Task<ProvinceResponseDto?> CreateAsync(ProvinceUpsertDto dto)
     {
-        var exists = await db.Provinces.AnyAsync(p => p.Slug == dto.Slug);
-        if (exists) return null;
+        var slugExists = await db.Provinces.AnyAsync(p => p.Slug == dto.Slug);
+        if (slugExists) return null;
 
         var province = new Province
         {
@@ -109,24 +115,33 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
         return MapToDto(province, false);
     }
 
-    public async Task<bool> DeleteAsync(Guid id)
+    // --- НОВАЯ ЛОГИКА УДАЛЕНИЯ ---
+    public async Task<ProvinceDeleteResult> DeleteAsync(Guid id)
     {
-        var province = await db.Provinces
-            .Include(p => p.Cities)
-            .FirstOrDefaultAsync(p => p.Id == id);
-
-        if (province is null) return false;
-
-        // КРИТИЧЕСКАЯ ПРОВЕРКА: Если есть города, удалять нельзя
-        if (province.Cities.Any())
+        // 1. Проверяем существование без загрузки связанных коллекций (Include)
+        var province = await db.Provinces.FindAsync(id);
+        if (province is null)
         {
-            // Здесь мы возвращаем false. В эндпоинте это превратится в Conflict (409)
-            return false;
+            return ProvinceDeleteResult.NotFound;
         }
 
+        // 2. Иерархическая проверка: есть ли привязанные города
+        var hasCities = await db.Cities.AnyAsync(c => c.ProvinceId == id);
+
+        // 3. Бизнес-проверка: есть ли привязанные бизнес-страницы
+        var hasBusinessPages = await db.BusinessPages.AnyAsync(bp => bp.ProvinceId == id);
+
+        // 4. Если есть зависимости, блокируем удаление
+        if (hasCities || hasBusinessPages)
+        {
+            return ProvinceDeleteResult.InUse;
+        }
+
+        // 5. Зависимостей нет, безопасно удаляем
         db.Provinces.Remove(province);
         await db.SaveChangesAsync();
-        return true;
+
+        return ProvinceDeleteResult.Success;
     }
 
     private static ProvinceResponseDto MapToDto(Province province, bool includeCities)
@@ -136,7 +151,8 @@ public class ProvinceService(DirectoryDbContext db) : IProvinceService
             province.Name,
             province.Slug,
             includeCities && province.Cities != null
-                ? province.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId, province.Name))
-                : null);
+                ? province.Cities.Select(c => new CityResponseDto(c.Id, c.Name, c.Slug, c.ProvinceId))
+                : null
+        );
     }
 }

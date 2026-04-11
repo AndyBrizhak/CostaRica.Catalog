@@ -22,10 +22,8 @@ public static class ProvinceEndpoints
             [FromQuery] string? sort = null,
             [FromQuery] bool includeCities = false) =>
         {
-            // Инициализируем параметры значениями по умолчанию
             var queryParams = new ProvinceQueryParameters();
 
-            // 1. Парсинг фильтров: filter={"Q":"searchterm"}
             if (!string.IsNullOrEmpty(filter))
             {
                 try
@@ -36,10 +34,9 @@ public static class ProvinceEndpoints
                         queryParams.Q = qValue?.ToString();
                     }
                 }
-                catch { /* Игнорируем ошибки парсинга */ }
+                catch { }
             }
 
-            // 2. Парсинг пагинации: range=[0,9]
             if (!string.IsNullOrEmpty(range))
             {
                 try
@@ -48,13 +45,12 @@ public static class ProvinceEndpoints
                     if (rangeData?.Length == 2)
                     {
                         queryParams.Start = rangeData[0];
-                        queryParams.End = rangeData[1] + 1; // react-admin шлет [0,9] для 10 записей
+                        queryParams.End = rangeData[1] + 1;
                     }
                 }
                 catch { }
             }
 
-            // 3. Парсинг сортировки: sort=["name","ASC"]
             if (!string.IsNullOrEmpty(sort))
             {
                 try
@@ -106,13 +102,19 @@ public static class ProvinceEndpoints
         // DELETE /api/provinces/{id}
         group.MapDelete("/{id:guid}", async (Guid id, IProvinceService service) =>
         {
-            var existing = await service.GetByIdAsync(id);
-            if (existing is null) return Results.NotFound();
+            // Вызываем защищенное удаление
+            var result = await service.DeleteAsync(id);
 
-            var success = await service.DeleteAsync(id);
-            return success
-                ? Results.NoContent()
-                : Results.Conflict(new { error = "Cannot delete province with cities." });
+            return result switch
+            {
+                ProvinceDeleteResult.Success => Results.NoContent(),
+                ProvinceDeleteResult.NotFound => Results.NotFound(),
+                ProvinceDeleteResult.InUse => Results.Conflict(new
+                {
+                    error = "Cannot delete this province because it contains cities or is assigned to business pages."
+                }),
+                _ => Results.StatusCode(500)
+            };
         })
         .RequireAuthorization("AdminFullAccess")
         .WithName("DeleteProvince");
