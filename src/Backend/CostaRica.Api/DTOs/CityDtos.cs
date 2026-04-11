@@ -3,6 +3,19 @@
 namespace CostaRica.Api.DTOs;
 
 /// <summary>
+/// Результат операции удаления города.
+/// Success — удалено успешно.
+/// NotFound — город с таким ID не существует.
+/// InUse — удаление запрещено, так как город привязан к бизнес-страницам.
+/// </summary>
+public enum CityDeleteResult
+{
+    Success,
+    NotFound,
+    InUse
+}
+
+/// <summary>
 /// DTO для возврата данных о городе (адаптировано под react-admin)
 /// </summary>
 public record CityResponseDto(

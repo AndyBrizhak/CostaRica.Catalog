@@ -31,7 +31,9 @@ public interface ICityService
     Task<CityResponseDto?> UpdateAsync(Guid id, CityUpsertDto dto);
 
     /// <summary>
-    /// Удалить город
+    /// Удалить город с проверкой на наличие зависимых сущностей (BusinessPages).
     /// </summary>
-    Task<bool> DeleteAsync(Guid id);
+    /// <param name="id">Идентификатор города</param>
+    /// <returns>Статус результата удаления (Success, NotFound, InUse)</returns>
+    Task<CityDeleteResult> DeleteAsync(Guid id);
 }
