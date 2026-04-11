@@ -1,8 +1,11 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-# 1. ТОКЕН СУПЕР-АДМИНА (Берем из начального логина)
-# @name loginSuperAdmin
+############################################################
+### 1. АВТОРИЗАЦИЯ (SUPER ADMIN)
+############################################################
+
+# @name loginAdmin
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
@@ -12,114 +15,76 @@ Content-Type: {{contentType}}
 }
 
 ###
-@superAdminToken = {{loginSuperAdmin.response.body.$.token}}
+@token = {{loginAdmin.response.body.$.token}}
 
-# 2. ПОДГОТОВКА МЕНЕДЖЕРА
-# @name registerManager
-POST {{base_url}}/api/auth/register
+
+############################################################
+### 2. ПОДГОТОВКА ДАННЫХ (Прoвинции и Города)
+############################################################
+
+### 2.1 Создаем Провинцию А (будет с городами)
+# @name createProvA
+POST {{base_url}}/api/provinces
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
-{
-  "email": "manager-provinces@example.com",
-  "password": "Password123!",
-  "userName": "ProvinceManager"
+{ 
+  "name": "Test-Prov-A-{{$guid}}", 
+  "slug": "slug-a-{{$guid}}" 
 }
 
 ###
-@managerId = {{registerManager.response.body.$.id}}
+@idProvA = {{createProvA.response.body.$.id}}
 
-# Повышаем до менеджера (делает SuperAdmin)
-PUT {{base_url}}/api/admin/users/{{managerId}}/roles
-Authorization: Bearer {{superAdminToken}}
-Content-Type: {{contentType}}
-
-[ "Manager" ]
-
-###
-# Логин менеджера для получения токена
-# @name loginManager
-POST {{base_url}}/api/auth/login
+### 2.2 Создаем Город в Провинции А (создаем зависимость)
+POST {{base_url}}/api/cities
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
-  "email": "manager-provinces@example.com",
-  "password": "Password123!"
+  "name": "City-In-A-{{$guid}}",
+  "slug": "city-a-{{$guid}}",
+  "provinceId": "{{idProvA}}"
+}
+
+### 2.3 Создаем Провинцию B (будет пустая)
+# @name createProvB
+POST {{base_url}}/api/provinces
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{ 
+  "name": "Test-Prov-B-{{$guid}}", 
+  "slug": "slug-b-{{$guid}}" 
 }
 
 ###
-@managerToken = {{loginManager.response.body.$.token}}
-
-# 3. ПОДГОТОВКА ЗРИТЕЛЯ (VIEWER)
-# @name registerViewer
-POST {{base_url}}/api/auth/register
-Content-Type: {{contentType}}
-
-{
-  "email": "viewer-provinces@example.com",
-  "password": "Password123!",
-  "userName": "ProvinceViewer"
-}
-
-###
-@viewerToken = {{registerViewer.response.body.$.token}}
+@idProvB = {{createProvB.response.body.$.id}}
 
 
 ############################################################
-### СЦЕНАРИЙ 1: SUPER ADMIN (ПОЛНЫЙ ДОСТУП)
+### 3. ТЕСТ ЗАЩИЩЕННОГО УДАЛЕНИЯ
 ############################################################
 
-# @name createProvAdmin
-POST {{base_url}}/api/provinces
-Authorization: Bearer {{superAdminToken}}
-Content-Type: {{contentType}}
-
-{ "name": "San José", "slug": "san-jose" }
-
-###
-@provId = {{createProvAdmin.response.body.$.id}}
-
-# Удаление (Разрешено)
-DELETE {{base_url}}/api/provinces/{{provId}}
-Authorization: Bearer {{superAdminToken}}
+### 3.1 ПРОВЕРКА КОНФЛИКТА (Удаление Провинции А)
+# Ожидаемый результат: 409 Conflict
+# Тело ответа должно содержать детальную ошибку о наличии городов.
+DELETE {{base_url}}/api/provinces/{{idProvA}}
+Authorization: Bearer {{token}}
 
 
-############################################################
-### СЦЕНАРИЙ 2: MANAGER (СОЗДАНИЕ/ЧТЕНИЕ - ДА, УДАЛЕНИЕ - НЕТ)
-############################################################
+### 3.2 ПРОВЕРКА УСПЕХА (Удаление Провинции B)
+# Ожидаемый результат: 204 No Content
+# Провинция пустая, удаление должно пройти мгновенно.
+DELETE {{base_url}}/api/provinces/{{idProvB}}
+Authorization: Bearer {{token}}
 
-### 2.1 Создание (Должно быть успешно)
-# @name createProvManager
-POST {{base_url}}/api/provinces
-Authorization: Bearer {{managerToken}}
-Content-Type: {{contentType}}
-
-{ "name": "Alajuela", "slug": "alajuela" }
-
-###
-@provIdManager = {{createProvManager.response.body.$.id}}
-
-### 2.2 Чтение списка (Должно быть успешно)
-GET {{base_url}}/api/provinces
-Authorization: Bearer {{managerToken}}
-
-### 2.3 Удаление (Ожидается: 403 Forbidden)
-DELETE {{base_url}}/api/provinces/{{provIdManager}}
-Authorization: Bearer {{managerToken}}
 
 ############################################################
-### СЦЕНАРИЙ 3: VIEWER / АНОНИМ (ПОЛНЫЙ БЛОК)
+### 4. ПРОВЕРКА ПОИСКА (УБЕДИТЬСЯ ЧТО ДАННЫЕ В БАЗЕ)
 ############################################################
 
-### 3.1 Чтение списка Зрителем (Ожидается: 403 Forbidden)
-GET {{base_url}}/api/provinces
-Authorization: Bearer {{viewerToken}}
-
-### 3.2 Чтение списка Анонимом (Ожидается: 401 Unauthorized)
-GET {{base_url}}/api/provinces
-
-### 3.3 Попытка создания (Ожидается: 403 Forbidden)
-POST {{base_url}}/api/provinces
-Authorization: Bearer {{viewerToken}}
-Content-Type: {{contentType}}
-
-{ "name": "Cartago", "slug": "cartago" }
+### 4.1 Поиск созданной Провинции А по части имени
+# Должна вернуться одна запись (Провинция А), так как B уже удалена.
+GET {{base_url}}/api/provinces?filter={"Q":"Test-Prov-A"}
+Authorization: Bearer {{token}}
