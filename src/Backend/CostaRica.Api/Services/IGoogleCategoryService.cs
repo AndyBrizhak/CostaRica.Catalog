@@ -24,27 +24,32 @@ public enum GoogleCategoryDeleteResult
 
 public interface IGoogleCategoryService
 {
+    /// <summary>
+    /// Retrieves a paginated and filtered list of categories.
+    /// Matches the 'Smart Search' and 'Smart Sort' pattern.
+    /// </summary>
     Task<(IEnumerable<GoogleCategoryResponseDto> Items, int TotalCount)> GetAllAsync(
         GoogleCategoryQueryParameters parameters,
         CancellationToken ct = default);
 
     Task<GoogleCategoryResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default);
 
+    /// <summary>
+    /// Finds a category by its string identifier (e.g., "restaurant").
+    /// </summary>
     Task<GoogleCategoryResponseDto?> GetByGcidAsync(string gcid, CancellationToken ct = default);
 
-    Task<GoogleCategoryResponseDto?> CreateAsync(GoogleCategoryUpsertDto dto, CancellationToken ct = default);
+    Task<GoogleCategoryResponseDto> CreateAsync(GoogleCategoryUpsertDto dto, CancellationToken ct = default);
 
     /// <summary>
-    /// Performs an atomic import of categories. 
-    /// Validation: stops at the first conflict (GCID, NameEn, or NameEs) found in DB or input list.
+    /// Performs an atomic import of categories from a list.
     /// </summary>
-    Task<BulkImportResponseDto> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories, CancellationToken ct = default);
+    Task<BulkImportResponseDto> BulkImportAsync(List<GoogleCategoryImportDto> categories, CancellationToken ct = default);
 
     Task<GoogleCategoryUpdateResult> UpdateAsync(Guid id, GoogleCategoryUpsertDto dto, CancellationToken ct = default);
 
     /// <summary>
-    /// Deletes a category if no BusinessPages are using it.
+    /// Deletes a category if it's not currently in use by any Business Pages.
     /// </summary>
-    /// <returns>A tuple with the result and the number of linked BusinessPages.</returns>
     Task<(GoogleCategoryDeleteResult Result, int UsageCount)> DeleteAsync(Guid id, CancellationToken ct = default);
 }

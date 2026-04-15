@@ -3,7 +3,7 @@
 namespace CostaRica.Api.DTOs;
 
 /// <summary>
-/// Response DTO for displaying category in lists and forms.
+/// Объект ответа для категории Google (стандарт react-admin).
 /// </summary>
 public record GoogleCategoryResponseDto(
     Guid Id,
@@ -12,7 +12,7 @@ public record GoogleCategoryResponseDto(
     string NameEs);
 
 /// <summary>
-/// DTO for creating or updating a single category.
+/// Объект для создания или обновления категории.
 /// </summary>
 public record GoogleCategoryUpsertDto(
     string Gcid,
@@ -20,7 +20,7 @@ public record GoogleCategoryUpsertDto(
     string NameEs);
 
 /// <summary>
-/// DTO used for bulk import from JSON.
+/// Объект для импорта категорий из JSON.
 /// </summary>
 public record GoogleCategoryImportDto(
     string Gcid,
@@ -28,12 +28,8 @@ public record GoogleCategoryImportDto(
     string NameEs);
 
 /// <summary>
-/// Response for atomic bulk import operations.
+/// Результат массового импорта.
 /// </summary>
-/// <param name="ImportedCount">Total records imported (0 if any conflict occurs).</param>
-/// <param name="HasConflict">Indicates if a conflict was detected during validation.</param>
-/// <param name="ErrorMessage">English message describing the first conflict found.</param>
-/// <param name="ConflictType">Field that caused the conflict: Gcid, NameEn, or NameEs.</param>
 public record BulkImportResponseDto(
     int ImportedCount,
     bool HasConflict,
@@ -41,12 +37,17 @@ public record BulkImportResponseDto(
     string? ConflictType = null);
 
 /// <summary>
-/// Query parameters for filtering and pagination in Google Categories list.
+/// Параметры запроса для списка категорий.
+/// Очищено от логики парсинга для ручного наполнения в эндпоинтах (как в TagQueryParameters).
 /// </summary>
-public record GoogleCategoryQueryParameters(
-    [FromQuery] int? _start = 0,
-    [FromQuery] int? _end = 20,
-    [FromQuery] string? _sort = "NameEn",
-    [FromQuery] string? _order = "ASC",
-    [FromQuery] string? q = null,
-    [FromQuery] Guid[]? id = null);
+public class GoogleCategoryQueryParameters
+{
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 10;
+    public string? _sort { get; set; } = "NameEn";
+    public string? _order { get; set; } = "ASC";
+
+    // Фильтры
+    public string? Q { get; set; } // Глобальный поиск
+    public Guid[]? id { get; set; } // Для запросов GET_MANY
+}
