@@ -1,7 +1,7 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-### 1. Логин SuperAdmin
+### 1. Login as SuperAdmin
 # @name loginSuperAdmin
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
@@ -13,44 +13,74 @@ Content-Type: {{contentType}}
 
 ###
 
-# ПЕРЕМЕННЫЕ ВЫНОСИМ СТРОГО ПОСЛЕ РАЗДЕЛИТЕЛЯ ###
 @superAdminToken = {{loginSuperAdmin.response.body.$.token}}
 
-### 2. Логин Менеджера
-# @name loginManager
-POST {{base_url}}/api/auth/login
-Content-Type: {{contentType}}
-
-{
-  "email": "manager-tags@example.com",
-  "password": "Password123!"
-}
-
-###
-
-@managerToken = {{loginManager.response.body.$.token}}
-
-### 3. Массовый импорт (Тестовый)
-# @name bulkImport
+### 2. BULK IMPORT - Success Scenario
+# Imports a set of new unique categories. Returns { "ImportedCount": 2 }
+# @name bulkImportSuccess
 POST {{base_url}}/api/google-categories/bulk
 Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
 [
-  { "gcid": "bakery-test", "nameEn": "Bakery", "nameEs": "Panadería" },
-  { "gcid": "bar-test", "nameEn": "Bar", "nameEs": "Bar" }
+    {
+        "gcid": "bulk_cat_1_{{$guid}}",
+        "nameEn": "Bulk Category A {{$randomInt 1 100}}",
+        "nameEs": "Categoría Masiva A {{$randomInt 1 100}}"
+    },
+    {
+        "gcid": "bulk_cat_2_{{$guid}}",
+        "nameEn": "Bulk Category B {{$randomInt 1 100}}",
+        "nameEs": "Categoría Masiva B {{$randomInt 1 100}}"
+    }
 ]
 
-### 4. Получение списка
-# @name getList
-GET {{base_url}}/api/google-categories?searchTerm=test
+###
+
+### 3. BULK IMPORT - Conflict: NameEn already in Database
+# Uses NameEn from the previous successful bulk import.
+# Expected: 409 Conflict
+POST {{base_url}}/api/google-categories/bulk
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+[
+    {
+        "gcid": "some_new_gcid",
+        "nameEn": "Bulk Category A",
+        "nameEs": "Different Spanish Name"
+    }
+]
+
+###
+
+### 4. CREATE SINGLE CATEGORY (For Delete Test)
+# We need a single ID to test the DELETE endpoint.
+# @name createSingle
+POST {{base_url}}/api/google-categories
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{
+    "gcid": "to_be_deleted_{{$guid}}",
+    "nameEn": "Temporary Category",
+    "nameEs": "Categoría Temporal"
+}
+
+###
+
+@categoryIdToDelete = {{createSingle.response.body.$.id}}
+
+### 5. DELETE - Success Scenario
+# Deletes the category created in step #4
+DELETE {{base_url}}/api/google-categories/{{categoryIdToDelete}}
 Authorization: Bearer {{superAdminToken}}
 
-### 5. Удаление (Ручная вставка ID)
-# Выполни запрос выше, скопируй id и подставь его сюда
-DELETE {{base_url}}/api/google-categories/ВСТАВЬ_ID_ЗДЕСЬ
-Authorization: Bearer {{superAdminToken}}
+###
 
-### 6. Проверка доступа Менеджера (Только чтение)
-GET {{base_url}}/api/google-categories
-Authorization: Bearer {{managerToken}}
+### 6. DELETE - Conflict Scenario (In Use)
+# REPLACE with a Guid of a category already linked to a BusinessPage in your DB
+@usedCategoryId = 00000000-0000-0000-0000-000000000000 
+
+DELETE {{base_url}}/api/google-categories/{{usedCategoryId}}
+Authorization: Bearer {{superAdminToken}}
