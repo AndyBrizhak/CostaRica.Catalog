@@ -21,6 +21,7 @@ public static class GoogleCategoryEndpoints
         {
             var (items, totalCount) = await service.GetAllAsync(args, ct);
 
+            // Essential for React Admin or custom front-end pagination
             response.Headers.Append("X-Total-Count", totalCount.ToString());
             response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
 
@@ -28,7 +29,7 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategories");
 
-        // GET /{id} — Get single category
+        // GET /{id} — Get single record
         group.MapGet("/{id:guid}", async (Guid id, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var result = await service.GetByIdAsync(id, ct);
@@ -42,23 +43,33 @@ public static class GoogleCategoryEndpoints
             var result = await service.CreateAsync(dto, ct);
 
             if (result is null)
-                return Results.Conflict(new { error = $"Category with GCID '{dto.Gcid}' already exists." });
+                return Results.Conflict(new { error = "Category with this GCID or Name already exists." });
 
             return Results.Created($"/api/google-categories/{result.Id}", result);
         })
         .RequireAuthorization("SuperAdminOnly")
         .WithName("CreateGoogleCategory");
 
-        // POST /bulk — Bulk import
+        // POST /bulk — Atomic Bulk Import
         group.MapPost("/bulk", async (List<GoogleCategoryImportDto> categories, IGoogleCategoryService service, CancellationToken ct) =>
         {
-            var count = await service.BulkImportAsync(categories, ct);
-            return Results.Ok(new { ImportedCount = count });
+            var result = await service.BulkImportAsync(categories, ct);
+
+            if (result.HasConflict)
+            {
+                return Results.Conflict(new
+                {
+                    error = result.ErrorMessage,
+                    conflictType = result.ConflictType
+                });
+            }
+
+            return Results.Ok(new { ImportedCount = result.ImportedCount });
         })
         .RequireAuthorization("SuperAdminOnly")
         .WithName("BulkImportGoogleCategories");
 
-        // PUT /{id} — Update with conflict check
+        // PUT /{id} — Update with duplicate check
         group.MapPut("/{id:guid}", async (Guid id, GoogleCategoryUpsertDto dto, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var status = await service.UpdateAsync(id, dto, ct);
@@ -67,14 +78,14 @@ public static class GoogleCategoryEndpoints
             {
                 GoogleCategoryUpdateResult.Success => Results.NoContent(),
                 GoogleCategoryUpdateResult.NotFound => Results.NotFound(),
-                GoogleCategoryUpdateResult.Conflict => Results.Conflict(new { error = $"Category with GCID '{dto.Gcid}' is already in use by another record." }),
+                GoogleCategoryUpdateResult.Conflict => Results.Conflict(new { error = "Update failed: GCID or Name is already taken by another category." }),
                 _ => Results.BadRequest()
             };
         })
         .RequireAuthorization("SuperAdminOnly")
         .WithName("UpdateGoogleCategory");
 
-        // DELETE /{id} — Delete with dependency check
+        // DELETE /{id} — Delete with dependency protection
         group.MapDelete("/{id:guid}", async (Guid id, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var (status, usageCount) = await service.DeleteAsync(id, ct);

@@ -3,17 +3,17 @@
 namespace CostaRica.Api.Services;
 
 /// <summary>
-/// Results for updating a Google Category.
+/// Possible results for an update operation.
 /// </summary>
 public enum GoogleCategoryUpdateResult
 {
     Success,
     NotFound,
-    Conflict // Used when GCID is already taken by another category
+    Conflict // Used when GCID or Names are already taken
 }
 
 /// <summary>
-/// Results for deleting a Google Category.
+/// Possible results for a delete operation.
 /// </summary>
 public enum GoogleCategoryDeleteResult
 {
@@ -34,16 +34,17 @@ public interface IGoogleCategoryService
 
     Task<GoogleCategoryResponseDto?> CreateAsync(GoogleCategoryUpsertDto dto, CancellationToken ct = default);
 
-    Task<int> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories, CancellationToken ct = default);
-
     /// <summary>
-    /// Updates an existing category with duplicate GCID check.
+    /// Performs an atomic import of categories. 
+    /// Validation: stops at the first conflict (GCID, NameEn, or NameEs) found in DB or input list.
     /// </summary>
+    Task<BulkImportResponseDto> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories, CancellationToken ct = default);
+
     Task<GoogleCategoryUpdateResult> UpdateAsync(Guid id, GoogleCategoryUpsertDto dto, CancellationToken ct = default);
 
     /// <summary>
-    /// Deletes a category if it's not referenced by any BusinessPages.
+    /// Deletes a category if no BusinessPages are using it.
     /// </summary>
-    /// <returns>A tuple containing the result and the count of dependent BusinessPages.</returns>
+    /// <returns>A tuple with the result and the number of linked BusinessPages.</returns>
     Task<(GoogleCategoryDeleteResult Result, int UsageCount)> DeleteAsync(Guid id, CancellationToken ct = default);
 }

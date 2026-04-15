@@ -12,11 +12,13 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
     {
         var query = db.GoogleCategories.AsNoTracking().AsQueryable();
 
+        // 1. Filtering by IDs
         if (parameters.id is { Length: > 0 })
         {
             query = query.Where(c => parameters.id.Contains(c.Id));
         }
 
+        // 2. Search (q)
         if (!string.IsNullOrWhiteSpace(parameters.q))
         {
             var lowerQ = parameters.q.ToLower();
@@ -28,12 +30,12 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
 
         var totalCount = await query.CountAsync(ct);
 
-        // Sorting
+        // 3. Sorting
         query = parameters._order?.ToUpper() == "DESC"
             ? query.OrderByDescending(c => EF.Property<object>(c, parameters._sort ?? "NameEn"))
             : query.OrderBy(c => EF.Property<object>(c, parameters._sort ?? "NameEn"));
 
-        // Pagination
+        // 4. Pagination
         if (parameters._start.HasValue && parameters._end.HasValue)
         {
             var take = parameters._end.Value - parameters._start.Value;
@@ -63,8 +65,11 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
     {
         if (string.IsNullOrWhiteSpace(dto.Gcid)) return null;
 
-        if (await db.GoogleCategories.AnyAsync(c => c.Gcid == dto.Gcid, ct))
-            return null;
+        // Ensure unique GCID and Names
+        var exists = await db.GoogleCategories.AnyAsync(c =>
+            c.Gcid == dto.Gcid || c.NameEn == dto.NameEn || c.NameEs == dto.NameEs, ct);
+
+        if (exists) return null;
 
         var category = new GoogleCategory
         {
@@ -80,44 +85,60 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
         return new GoogleCategoryResponseDto(category.Id, category.Gcid, category.NameEn, category.NameEs);
     }
 
-    public async Task<int> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories, CancellationToken ct = default)
+    public async Task<BulkImportResponseDto> BulkImportAsync(IEnumerable<GoogleCategoryImportDto> categories, CancellationToken ct = default)
     {
-        var gcids = categories.Select(c => c.Gcid).ToList();
-        var existingGcids = await db.GoogleCategories
-            .Where(c => gcids.Contains(c.Gcid))
-            .Select(c => c.Gcid)
-            .ToListAsync(ct);
+        var list = categories.ToList();
 
-        var newCategories = categories
-            .Where(c => !existingGcids.Contains(c.Gcid))
-            .Select(c => new GoogleCategory
+        // Step 1: Internal duplicates check (within the uploaded file)
+        var duplicateInList = list.GroupBy(c => c.Gcid).FirstOrDefault(g => g.Count() > 1);
+        if (duplicateInList != null)
+            return new BulkImportResponseDto(0, true, $"Conflict: GCID '{duplicateInList.Key}' is duplicated within the source file.", "Gcid");
+
+        // Step 2: Atomic database validation (stops at the first conflict)
+        foreach (var item in list)
+        {
+            var conflict = await db.GoogleCategories
+                .AsNoTracking()
+                .Where(c => c.Gcid == item.Gcid || c.NameEn == item.NameEn || c.NameEs == item.NameEs)
+                .Select(c => new { c.Gcid, c.NameEn, c.NameEs })
+                .FirstOrDefaultAsync(ct);
+
+            if (conflict != null)
             {
-                Id = Guid.NewGuid(),
-                Gcid = c.Gcid.Trim(),
-                NameEn = c.NameEn.Trim(),
-                NameEs = c.NameEs.Trim()
-            })
-            .ToList();
+                string field = conflict.Gcid == item.Gcid ? "Gcid" : (conflict.NameEn == item.NameEn ? "NameEn" : "NameEs");
+                string value = conflict.Gcid == item.Gcid ? conflict.Gcid : (conflict.NameEn == item.NameEn ? conflict.NameEn : conflict.NameEs);
 
-        if (newCategories.Count == 0) return 0;
+                return new BulkImportResponseDto(0, true,
+                    $"Conflict: Category with {field} '{value}' already exists. Please resolve conflicts or clean the database before importing.",
+                    field);
+            }
+        }
 
-        db.GoogleCategories.AddRange(newCategories);
-        return await db.SaveChangesAsync(ct);
+        // Step 3: Atomic Insert
+        var entities = list.Select(c => new GoogleCategory
+        {
+            Id = Guid.NewGuid(),
+            Gcid = c.Gcid.Trim(),
+            NameEn = c.NameEn.Trim(),
+            NameEs = c.NameEs.Trim()
+        }).ToList();
+
+        db.GoogleCategories.AddRange(entities);
+        await db.SaveChangesAsync(ct);
+
+        return new BulkImportResponseDto(entities.Count, false);
     }
 
     public async Task<GoogleCategoryUpdateResult> UpdateAsync(Guid id, GoogleCategoryUpsertDto dto, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(dto.Gcid) || string.IsNullOrWhiteSpace(dto.NameEn))
-            return GoogleCategoryUpdateResult.Conflict; // Or handle as validation error
-
         var category = await db.GoogleCategories.FindAsync([id], ct);
         if (category is null) return GoogleCategoryUpdateResult.NotFound;
 
-        // Check if new GCID is already taken by another entity
-        var gcidConflict = await db.GoogleCategories
-            .AnyAsync(c => c.Gcid == dto.Gcid && c.Id != id, ct);
+        // Conflict check: ensure no other record has the same Gcid or Names
+        var hasConflict = await db.GoogleCategories
+            .AnyAsync(c => c.Id != id && (c.Gcid == dto.Gcid || c.NameEn == dto.NameEn || c.NameEs == dto.NameEs), ct);
 
-        if (gcidConflict) return GoogleCategoryUpdateResult.Conflict;
+        if (hasConflict) return GoogleCategoryUpdateResult.Conflict;
 
         category.Gcid = dto.Gcid.Trim();
         category.NameEn = dto.NameEn.Trim();
@@ -132,7 +153,7 @@ public class GoogleCategoryService(DirectoryDbContext db) : IGoogleCategoryServi
         var category = await db.GoogleCategories.FindAsync([id], ct);
         if (category is null) return (GoogleCategoryDeleteResult.NotFound, 0);
 
-        // Check dependencies in BusinessPages (both Primary and Secondary)
+        // Check dependencies in both Primary and Secondary category links
         var usageCount = await db.BusinessPages
             .CountAsync(bp => bp.PrimaryCategoryId == id || bp.SecondaryCategories.Any(sc => sc.Id == id), ct);
 
