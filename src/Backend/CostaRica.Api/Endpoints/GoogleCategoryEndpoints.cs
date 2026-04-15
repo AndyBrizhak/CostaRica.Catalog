@@ -10,10 +10,9 @@ public static class GoogleCategoryEndpoints
     {
         var group = routes.MapGroup("/api/google-categories")
             .WithTags("GoogleCategories")
-            // УРОВЕНЬ 1: Доступ только для персонала (Manager и выше)
             .RequireAuthorization("ManagementAccess");
 
-        // GET / — Просмотр списка (Доступно всем в ManagementAccess)
+        // GET / — List with pagination and search
         group.MapGet("/", async (
             [AsParameters] GoogleCategoryQueryParameters args,
             IGoogleCategoryService service,
@@ -29,7 +28,7 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategories");
 
-        // GET /{id} — Получение одной записи (Доступно всем в ManagementAccess)
+        // GET /{id} — Get single category
         group.MapGet("/{id:guid}", async (Guid id, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var result = await service.GetByIdAsync(id, ct);
@@ -37,29 +36,20 @@ public static class GoogleCategoryEndpoints
         })
         .WithName("GetGoogleCategoryById");
 
-        // GET /gcid/{gcid} (Доступно всем в ManagementAccess)
-        group.MapGet("/gcid/{gcid}", async (string gcid, IGoogleCategoryService service, CancellationToken ct) =>
-        {
-            var result = await service.GetByGcidAsync(gcid, ct);
-            return result is not null ? Results.Ok(result) : Results.NotFound();
-        })
-        .WithName("GetGoogleCategoryByGcid");
-
-        // --- МЕТОДЫ ТОЛЬКО ДЛЯ SUPER ADMIN ---
-
-        // POST / — Создание одиночной категории
+        // POST / — Create new category
         group.MapPost("/", async (GoogleCategoryUpsertDto dto, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var result = await service.CreateAsync(dto, ct);
+
             if (result is null)
-                return Results.Conflict(new { error = $"Category with Gcid '{dto.Gcid}' already exists." });
+                return Results.Conflict(new { error = $"Category with GCID '{dto.Gcid}' already exists." });
 
             return Results.Created($"/api/google-categories/{result.Id}", result);
         })
         .RequireAuthorization("SuperAdminOnly")
         .WithName("CreateGoogleCategory");
 
-        // POST /bulk — Массовый импорт
+        // POST /bulk — Bulk import
         group.MapPost("/bulk", async (List<GoogleCategoryImportDto> categories, IGoogleCategoryService service, CancellationToken ct) =>
         {
             var count = await service.BulkImportAsync(categories, ct);
@@ -68,20 +58,37 @@ public static class GoogleCategoryEndpoints
         .RequireAuthorization("SuperAdminOnly")
         .WithName("BulkImportGoogleCategories");
 
-        // PUT /{id} — Обновление
+        // PUT /{id} — Update with conflict check
         group.MapPut("/{id:guid}", async (Guid id, GoogleCategoryUpsertDto dto, IGoogleCategoryService service, CancellationToken ct) =>
         {
-            var updated = await service.UpdateAsync(id, dto, ct);
-            return updated ? Results.NoContent() : Results.NotFound();
+            var status = await service.UpdateAsync(id, dto, ct);
+
+            return status switch
+            {
+                GoogleCategoryUpdateResult.Success => Results.NoContent(),
+                GoogleCategoryUpdateResult.NotFound => Results.NotFound(),
+                GoogleCategoryUpdateResult.Conflict => Results.Conflict(new { error = $"Category with GCID '{dto.Gcid}' is already in use by another record." }),
+                _ => Results.BadRequest()
+            };
         })
         .RequireAuthorization("SuperAdminOnly")
         .WithName("UpdateGoogleCategory");
 
-        // DELETE /{id} — Удаление
+        // DELETE /{id} — Delete with dependency check
         group.MapDelete("/{id:guid}", async (Guid id, IGoogleCategoryService service, CancellationToken ct) =>
         {
-            var deleted = await service.DeleteAsync(id, ct);
-            return deleted ? Results.NoContent() : Results.NotFound();
+            var (status, usageCount) = await service.DeleteAsync(id, ct);
+
+            return status switch
+            {
+                GoogleCategoryDeleteResult.Success => Results.NoContent(),
+                GoogleCategoryDeleteResult.NotFound => Results.NotFound(),
+                GoogleCategoryDeleteResult.InUse => Results.Conflict(new
+                {
+                    error = $"Category is used in {usageCount} business pages and cannot be deleted."
+                }),
+                _ => Results.BadRequest()
+            };
         })
         .RequireAuthorization("SuperAdminOnly")
         .WithName("DeleteGoogleCategory");

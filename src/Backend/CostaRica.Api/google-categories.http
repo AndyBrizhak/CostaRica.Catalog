@@ -1,7 +1,7 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-### 1. Логин SuperAdmin
+### 1. Login as SuperAdmin
 # @name loginSuperAdmin
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
@@ -13,44 +13,68 @@ Content-Type: {{contentType}}
 
 ###
 
-# ПЕРЕМЕННЫЕ ВЫНОСИМ СТРОГО ПОСЛЕ РАЗДЕЛИТЕЛЯ ###
 @superAdminToken = {{loginSuperAdmin.response.body.$.token}}
 
-### 2. Логин Менеджера
-# @name loginManager
-POST {{base_url}}/api/auth/login
+### 2. GET List - Check Headers (X-Total-Count)
+GET {{base_url}}/api/google-categories?_start=0&_end=10
+Authorization: Bearer {{superAdminToken}}
+
+###
+
+### 3. POST - Create Category with Unique GCID
+# We use {{$guid}} to ensure the GCID is always unique during testing
+# @name createCategory
+POST {{base_url}}/api/google-categories
+Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
 {
-  "email": "manager-tags@example.com",
-  "password": "Password123!"
+  "gcid": "test_cat_{{$guid}}",
+  "nameEn": "Test Category {{$randomInt 1 100}}",
+  "nameEs": "Categoría de Prueba {{$randomInt 1 100}}"
 }
 
 ###
 
-@managerToken = {{loginManager.response.body.$.token}}
+@newCategoryId = {{createCategory.response.body.$.id}}
+@newCategoryGcid = {{createCategory.response.body.$.gcid}}
 
-### 3. Массовый импорт (Тестовый)
-# @name bulkImport
-POST {{base_url}}/api/google-categories/bulk
+### 4. POST - Create Category (Expected 409 Conflict)
+# Try to create the EXACT same category again using the GCID from the previous request
+POST {{base_url}}/api/google-categories
 Authorization: Bearer {{superAdminToken}}
 Content-Type: {{contentType}}
 
-[
-  { "gcid": "bakery-test", "nameEn": "Bakery", "nameEs": "Panadería" },
-  { "gcid": "bar-test", "nameEn": "Bar", "nameEs": "Bar" }
-]
+{
+  "gcid": "{{newCategoryGcid}}",
+  "nameEn": "Duplicate Entry",
+  "nameEs": "Entrada Duplicada"
+}
 
-### 4. Получение списка
-# @name getList
-GET {{base_url}}/api/google-categories?searchTerm=test
+###
+
+### 5. PUT - Update Category (Success)
+PUT {{base_url}}/api/google-categories/{{newCategoryId}}
+Authorization: Bearer {{superAdminToken}}
+Content-Type: {{contentType}}
+
+{
+  "gcid": "updated_{{$guid}}",
+  "nameEn": "Updated Name EN",
+  "nameEs": "Updated Name ES"
+}
+
+###
+
+### 6. DELETE - Success (No dependencies)
+DELETE {{base_url}}/api/google-categories/{{newCategoryId}}
 Authorization: Bearer {{superAdminToken}}
 
-### 5. Удаление (Ручная вставка ID)
-# Выполни запрос выше, скопируй id и подставь его сюда
-DELETE {{base_url}}/api/google-categories/ВСТАВЬ_ID_ЗДЕСЬ
-Authorization: Bearer {{superAdminToken}}
+###
 
-### 6. Проверка доступа Менеджера (Только чтение)
-GET {{base_url}}/api/google-categories
-Authorization: Bearer {{managerToken}}
+### 7. DELETE - Conflict (Category is In Use)
+# REPLACE with a Guid of a category already linked to a BusinessPage in your DB
+@usedCategoryId = 00000000-0000-0000-0000-000000000000 
+
+DELETE {{base_url}}/api/google-categories/{{usedCategoryId}}
+Authorization: Bearer {{superAdminToken}}
