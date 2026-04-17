@@ -9,12 +9,12 @@ public static class MediaEndpoints
 {
     public static void MapMediaEndpoints(this IEndpointRouteBuilder routes)
     {
-        // Устанавливаем базовую группу /api/media
+        // Устанавливаем базовую группу /api/media для синхронизации с VITE_API_URL
         var group = routes.MapGroup("/api/media")
             .WithTags("Media")
             .RequireAuthorization("ManagementAccess");
 
-        // 1. GET /api/media — Получение списка
+        // 1. GET /api/media — Получение списка (List)
         group.MapGet("/", async (HttpContext context, IMediaAssetService service, CancellationToken ct) =>
         {
             var query = context.Request.Query;
@@ -61,7 +61,7 @@ public static class MediaEndpoints
         })
         .WithName("GetMediaList");
 
-        // 2. GET /api/media/{id} — Получение по ID
+        // 2. GET /api/media/{id} — Получение по ID (One)
         group.MapGet("/{id:guid}", async (Guid id, IMediaAssetService service, CancellationToken ct) =>
         {
             var result = await service.GetByIdAsync(id, ct);
@@ -69,7 +69,8 @@ public static class MediaEndpoints
         })
         .WithName("GetMediaById");
 
-        // 3. POST /api/media — Загрузка (Унифицированный маршрут для React Admin)
+        // 3. POST /api/media — Загрузка (Create)
+        // Убрали /upload, чтобы соответствовать стандарту React Admin POST /api/media
         group.MapPost("/", async (
             IFormFile? file,
             [FromForm] string? slug,
@@ -91,12 +92,12 @@ public static class MediaEndpoints
 
             return result != null
                 ? Results.Created($"/api/media/{result.Id}", result)
-                : Results.Conflict(new { error = "Slug already exists." });
+                : Results.Conflict(new { error = "A media asset with this slug already exists." });
         })
         .DisableAntiforgery()
         .WithName("CreateMedia");
 
-        // 4. PUT /api/media/{id} — Обновление
+        // 4. PUT /api/media/{id} — Обновление (Update)
         group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, IMediaAssetService service, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(dto.Slug))
@@ -116,8 +117,11 @@ public static class MediaEndpoints
             {
                 MediaDeleteStatus.Success => Results.NoContent(),
                 MediaDeleteStatus.NotFound => Results.NotFound(),
-                MediaDeleteStatus.InUse => Results.Conflict(new { error = $"In use on {result.UsageCount} pages." }),
-                _ => Results.BadRequest()
+                MediaDeleteStatus.InUse => Results.Conflict(new
+                {
+                    error = $"Conflict: Image is used on {result.UsageCount} business page(s). Delete links first."
+                }),
+                _ => Results.BadRequest(new { error = "An unexpected error occurred." })
             };
         })
         .RequireAuthorization("AdminFullAccess")

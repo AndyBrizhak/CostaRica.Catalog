@@ -15,10 +15,10 @@ Content-Type: {{contentType}}
 @token = {{loginAdmin.response.body.$.token}}
 
 
-### 2. СОЗДАНИЕ ТЕСТОВЫХ ДАННЫХ (SEEDING)
+### 2. СОЗДАНИЕ МЕДИА (CREATE / UPLOAD)
 
-# 2.1. Загрузка первого ассета (POST на корень ресурса)
-# @name createOrphan
+# 2.1. Загрузка файла (POST на корень /api/media)
+# @name createMedia
 POST {{base_url}}/media
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
@@ -26,85 +26,68 @@ Content-Type: multipart/form-data; boundary=WebAppBoundary
 --WebAppBoundary
 Content-Disposition: form-data; name="slug"
 
-orphan-asset-{{$guid}}
+test-asset-{{$guid}}
 --WebAppBoundary
 Content-Disposition: form-data; name="altTextEn"
 
-Orphan Image Description
+Test English Description
 --WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="test1.png"
+Content-Disposition: form-data; name="altTextEs"
+
+Descripción de prueba
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test_image.png"
 Content-Type: image/png
 
 < ./test_input.png
 --WebAppBoundary--
 
 ###
-@orphanId = {{createOrphan.response.body.$.id}}
-
-# 2.2. Загрузка второго ассета
-# @name createLinked
-POST {{base_url}}/media
-Authorization: Bearer {{token}}
-Content-Type: multipart/form-data; boundary=WebAppBoundary
-
---WebAppBoundary
-Content-Disposition: form-data; name="slug"
-
-linked-asset-{{$guid}}
---WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="test2.png"
-Content-Type: image/png
-
-< ./test_input.png
---WebAppBoundary--
-
-###
-@linkedId = {{createLinked.response.body.$.id}}
+@mediaId = {{createMedia.response.body.$.id}}
 
 
-### 3. ПОЛУЧЕНИЕ И ФИЛЬТРАЦИЯ (READ)
+### 3. ПОЛУЧЕНИЕ ДАННЫХ (READ)
 
-# 3.1. Список с сортировкой и пагинацией
-GET {{base_url}}/media?sort=["slug","ASC"]&range=[0,9]
-Authorization: Bearer {{token}}
-
-###
-
-# 3.2. Проверка фильтра "СИРОТЫ"
+# 3.1. Список с фильтрацией (только "сироты") 
 GET {{base_url}}/media?filter={"onlyOrphans":true}
 Authorization: Bearer {{token}}
 
 ###
 
-# 3.3. Глобальный поиск по части слага
-GET {{base_url}}/media?filter={"q":"linked-asset"}
-Authorization: Bearer {{token}}
-
-
-### 4. ТЕСТ КОНФЛИКТА УДАЛЕНИЯ (409 CONFLICT)
-
-# 4.1. Попытка удаления ассета (в системе уже должны быть связи)
-# Если ассет привязан в БД, этот запрос вернет 409
-DELETE {{base_url}}/media/{{linkedId}}
-Authorization: Bearer {{token}}
-
-
-### 5. ОЧИСТКА (DELETE)
-
-# 5.1. Успешное удаление "сироты"
-DELETE {{base_url}}/media/{{orphanId}}
+# 3.2. Список с сортировкой и пагинацией 
+GET {{base_url}}/media?sort=["createdAt","DESC"]&range=[0,4]
 Authorization: Bearer {{token}}
 
 ###
 
-# 5.2. Тест ошибки: Загрузка без Slug (должен вернуть 400 Bad Request)
-POST {{base_url}}/media
+# 3.3. Получение конкретного ассета по ID 
+GET {{base_url}}/media/{{mediaId}}
 Authorization: Bearer {{token}}
-Content-Type: multipart/form-data; boundary=WebAppBoundary
 
---WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="fail.png"
-Content-Type: image/png
 
-< ./test_input.png
---WebAppBoundary--
+### 4. ОБНОВЛЕНИЕ МЕТАДАННЫХ (UPDATE)
+
+# 4.1. Обновление Slug и Alt текстов (PUT) 
+PUT {{base_url}}/media/{{mediaId}}
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "slug": "updated-slug-{{$guid}}",
+  "altTextEn": "Updated EN Alt",
+  "altTextEs": "Updated ES Alt"
+}
+
+
+### 5. УДАЛЕНИЕ (DELETE)
+
+# 5.1. Удаление ассета 
+DELETE {{base_url}}/media/{{mediaId}}
+Authorization: Bearer {{token}}
+
+###
+
+# 5.2. Тест ошибки удаления (409 Conflict) 
+# Этот запрос стоит запускать на ID, который привязан к какой-либо бизнес-странице
+DELETE {{base_url}}/media/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}
