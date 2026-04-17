@@ -12,14 +12,14 @@ Content-Type: {{contentType}}
 }
 
 ###
-@token = {{login.response.body.$.token}}
+@token = {{loginAdmin.response.body.$.token}}
 
 
 ### 2. СОЗДАНИЕ ТЕСТОВЫХ ДАННЫХ (SEEDING)
 
-# 2.1. Загрузка первого ассета (будет "сиротой")
+# 2.1. Загрузка первого ассета (POST на корень ресурса)
 # @name createOrphan
-POST {{base_url}}/media/upload
+POST {{base_url}}/media
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
@@ -41,9 +41,9 @@ Content-Type: image/png
 ###
 @orphanId = {{createOrphan.response.body.$.id}}
 
-# 2.2. Загрузка второго ассета (привяжем его к бизнесу)
+# 2.2. Загрузка второго ассета
 # @name createLinked
-POST {{base_url}}/media/upload
+POST {{base_url}}/media
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
@@ -64,14 +64,13 @@ Content-Type: image/png
 
 ### 3. ПОЛУЧЕНИЕ И ФИЛЬТРАЦИЯ (READ)
 
-# 3.1. Список с сортировкой и пагинацией (React Admin style)
+# 3.1. Список с сортировкой и пагинацией
 GET {{base_url}}/media?sort=["slug","ASC"]&range=[0,9]
 Authorization: Bearer {{token}}
 
 ###
 
-# 3.2. Проверка фильтра "СИРОТЫ" (Only Orphans)
-# Ожидаем: в списке точно должен быть @orphanId
+# 3.2. Проверка фильтра "СИРОТЫ"
 GET {{base_url}}/media?filter={"onlyOrphans":true}
 Authorization: Bearer {{token}}
 
@@ -84,33 +83,22 @@ Authorization: Bearer {{token}}
 
 ### 4. ТЕСТ КОНФЛИКТА УДАЛЕНИЯ (409 CONFLICT)
 
-# 4.1. Связывание ассета с бизнес-страницей
-# ВНИМАНИЕ: Замени businessPageId на существующий ID из твоей базы
-@businessPageId = 00000000-0000-0000-0000-000000000000 
-
-POST {{base_url}}/media/{{linkedId}}/link/{{businessPageId}}
-Authorization: Bearer {{token}}
-
-###
-
-# 4.2. Попытка удаления привязанного ассета
-# Ожидаем: 409 Conflict с информативным сообщением
+# 4.1. Попытка удаления ассета (в системе уже должны быть связи)
+# Если ассет привязан в БД, этот запрос вернет 409
 DELETE {{base_url}}/media/{{linkedId}}
 Authorization: Bearer {{token}}
 
 
-### 5. ОЧИСТКА И ВАЛИДАЦИЯ (DELETE / CLEANUP)
+### 5. ОЧИСТКА (DELETE)
 
 # 5.1. Успешное удаление "сироты"
-# Ожидаем: 204 No Content
 DELETE {{base_url}}/media/{{orphanId}}
 Authorization: Bearer {{token}}
 
 ###
 
-# 5.2. Тест ошибки: Загрузка без Slug
-# Жду твоих замечаний по коду, чтобы этот тест возвращал красивый ответ
-POST {{base_url}}/media/upload
+# 5.2. Тест ошибки: Загрузка без Slug (должен вернуть 400 Bad Request)
+POST {{base_url}}/media
 Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 

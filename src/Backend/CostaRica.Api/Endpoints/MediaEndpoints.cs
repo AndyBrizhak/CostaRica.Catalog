@@ -9,17 +9,17 @@ public static class MediaEndpoints
 {
     public static void MapMediaEndpoints(this IEndpointRouteBuilder routes)
     {
+        // Устанавливаем базовую группу /api/media
         var group = routes.MapGroup("/api/media")
             .WithTags("Media")
             .RequireAuthorization("ManagementAccess");
 
-        // 1. ПОЛУЧЕНИЕ СПИСКА (GET) - Оставляем парсинг для React Admin
+        // 1. GET /api/media — Получение списка
         group.MapGet("/", async (HttpContext context, IMediaAssetService service, CancellationToken ct) =>
         {
             var query = context.Request.Query;
             var parameters = new MediaQueryParameters();
 
-            // Сортировка sort=["field","ORDER"]
             var sortJson = query["sort"].ToString();
             if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
             {
@@ -31,7 +31,6 @@ public static class MediaEndpoints
                 }
             }
 
-            // Пагинация range=[0,9]
             var rangeJson = query["range"].ToString();
             if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
             {
@@ -43,13 +42,11 @@ public static class MediaEndpoints
                 }
             }
 
-            // Фильтры filter={...}
             var filterJson = query["filter"].ToString();
             if (!string.IsNullOrWhiteSpace(filterJson) && filterJson.StartsWith('{'))
             {
                 using var doc = JsonDocument.Parse(filterJson);
                 var root = doc.RootElement;
-
                 if (root.TryGetProperty("q", out var qProp)) parameters.Q = qProp.GetString();
                 if (root.TryGetProperty("onlyOrphans", out var oProp)) parameters.OnlyOrphans = oProp.GetBoolean();
                 if (root.TryGetProperty("id", out var idProp)) parameters.Id = JsonSerializer.Deserialize<Guid[]>(idProp.GetRawText());
@@ -64,7 +61,7 @@ public static class MediaEndpoints
         })
         .WithName("GetMediaList");
 
-        // 2. ПОЛУЧЕНИЕ ПО ID (GET)
+        // 2. GET /api/media/{id} — Получение по ID
         group.MapGet("/{id:guid}", async (Guid id, IMediaAssetService service, CancellationToken ct) =>
         {
             var result = await service.GetByIdAsync(id, ct);
@@ -72,8 +69,8 @@ public static class MediaEndpoints
         })
         .WithName("GetMediaById");
 
-        // 3. ЗАГРУЗКА (POST) - Только обязательные по контексту БД проверки
-        group.MapPost("/upload", async (
+        // 3. POST /api/media — Загрузка (Унифицированный маршрут для React Admin)
+        group.MapPost("/", async (
             IFormFile? file,
             [FromForm] string? slug,
             [FromForm] string? altTextEn,
@@ -81,11 +78,9 @@ public static class MediaEndpoints
             IMediaAssetService service,
             CancellationToken ct) =>
         {
-            // Без файла загрузка физически невозможна
             if (file == null || file.Length == 0)
                 return Results.BadRequest(new { error = "No file uploaded." });
 
-            // Slug обязателен в БД (not null)
             if (string.IsNullOrWhiteSpace(slug))
                 return Results.BadRequest(new { error = "Slug is required." });
 
@@ -95,13 +90,13 @@ public static class MediaEndpoints
             var result = await service.UploadAsync(stream, file.FileName, file.ContentType, dto, ct);
 
             return result != null
-                ? Results.Created($"/media/{result.Id}", result)
+                ? Results.Created($"/api/media/{result.Id}", result)
                 : Results.Conflict(new { error = "Slug already exists." });
         })
         .DisableAntiforgery()
-        .WithName("UploadMedia");
+        .WithName("CreateMedia");
 
-        // 4. ОБНОВЛЕНИЕ МЕТАДАННЫХ (PUT)
+        // 4. PUT /api/media/{id} — Обновление
         group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, IMediaAssetService service, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(dto.Slug))
@@ -110,9 +105,9 @@ public static class MediaEndpoints
             var result = await service.UpdateMetadataAsync(id, dto, ct);
             return result != null ? Results.Ok(result) : Results.NotFound();
         })
-        .WithName("UpdateMediaMetadata");
+        .WithName("UpdateMedia");
 
-        // 5. УДАЛЕНИЕ (DELETE) - Сохраняем логику безопасного удаления
+        // 5. DELETE /api/media/{id} — Удаление
         group.MapDelete("/{id:guid}", async (Guid id, IMediaAssetService service, CancellationToken ct) =>
         {
             var result = await service.DeleteAsync(id, ct);
@@ -121,11 +116,7 @@ public static class MediaEndpoints
             {
                 MediaDeleteStatus.Success => Results.NoContent(),
                 MediaDeleteStatus.NotFound => Results.NotFound(),
-                MediaDeleteStatus.InUse => Results.Conflict(new
-                {
-                    error = $"Used on {result.UsageCount} pages.",
-                    usageCount = result.UsageCount
-                }),
+                MediaDeleteStatus.InUse => Results.Conflict(new { error = $"In use on {result.UsageCount} pages." }),
                 _ => Results.BadRequest()
             };
         })
