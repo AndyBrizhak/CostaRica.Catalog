@@ -1,8 +1,8 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
 
-### 1. АВТОРИЗАЦИЯ (SUPER ADMIN)
-# @name loginAdmin
+### 1. АВТОРИЗАЦИЯ
+# @name login
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
@@ -12,76 +12,111 @@ Content-Type: {{contentType}}
 }
 
 ###
-@adminToken = {{loginAdmin.response.body.$.token}}
-
-### 2. АУДИТ И ОЧИСТКА (ВЫПОЛНЯЕТ SUPER ADMIN)
-
-# 2.1. Получить список всех ассетов
-# Выполни этот запрос, чтобы увидеть текущие ID и Slug в базе
-# @name getList
-GET {{base_url}}/media
-Authorization: Bearer {{adminToken}}
-
-###
-
-# 2.2. Удаление конкретного ассета
-# Сюда нужно вставить ID из ответа выше, чтобы очистить базу перед тестом
-DELETE {{base_url}}/media/f7eeb28c-c031-446e-a5f1-ca9611f92175
-
-Authorization: Bearer {{adminToken}}
+@token = {{login.response.body.$.token}}
 
 
-### 3. АВТОРИЗАЦИЯ (MANAGER)
-# @name loginManager
-POST {{base_url}}/api/auth/login
-Content-Type: {{contentType}}
+### 2. СОЗДАНИЕ ТЕСТОВЫХ ДАННЫХ (SEEDING)
 
-{
-  "email": "manager-tags@example.com",
-  "password": "Password123!"
-}
-
-###
-@managerToken = {{loginManager.response.body.$.token}}
-
-
-### 4. ЦИКЛ ТЕСТИРОВАНИЯ МЕНЕДЖЕРА
-
-# 4.1. Создание нового ассета
-# @name uploadMedia
+# 2.1. Загрузка первого ассета (будет "сиротой")
+# @name createOrphan
 POST {{base_url}}/media/upload
-Authorization: Bearer {{managerToken}}
+Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
 --WebAppBoundary
 Content-Disposition: form-data; name="slug"
 
-security-test-image
+orphan-asset-{{$guid}}
 --WebAppBoundary
 Content-Disposition: form-data; name="altTextEn"
 
-Initial Alt Text
+Orphan Image Description
 --WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="test.png"
+Content-Disposition: form-data; name="file"; filename="test1.png"
 Content-Type: image/png
 
 < ./test_input.png
 --WebAppBoundary--
 
 ###
-@newAssetId = {{uploadMedia.response.body.$.id}}
+@orphanId = {{createOrphan.response.body.$.id}}
 
-### 4.2. Обновление метаданных (PUT)
-# Проверка, что менеджер может менять ассет
-PUT {{base_url}}/media/{{newAssetId}}
-Authorization: Bearer {{managerToken}}
-Content-Type: {{contentType}}
+# 2.2. Загрузка второго ассета (привяжем его к бизнесу)
+# @name createLinked
+POST {{base_url}}/media/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
 
-{
-  "altTextEn": "Updated by Manager",
-  "altTextEs": "Actualizado por el gerente"
-}
+--WebAppBoundary
+Content-Disposition: form-data; name="slug"
 
-### 4.3. Попытка удаления менеджером (Ожидается 403)
-DELETE {{base_url}}/media/{{newAssetId}}
-Authorization: Bearer {{managerToken}}
+linked-asset-{{$guid}}
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test2.png"
+Content-Type: image/png
+
+< ./test_input.png
+--WebAppBoundary--
+
+###
+@linkedId = {{createLinked.response.body.$.id}}
+
+
+### 3. ПОЛУЧЕНИЕ И ФИЛЬТРАЦИЯ (READ)
+
+# 3.1. Список с сортировкой и пагинацией (React Admin style)
+GET {{base_url}}/media?sort=["slug","ASC"]&range=[0,9]
+Authorization: Bearer {{token}}
+
+###
+
+# 3.2. Проверка фильтра "СИРОТЫ" (Only Orphans)
+# Ожидаем: в списке точно должен быть @orphanId
+GET {{base_url}}/media?filter={"onlyOrphans":true}
+Authorization: Bearer {{token}}
+
+###
+
+# 3.3. Глобальный поиск по части слага
+GET {{base_url}}/media?filter={"q":"linked-asset"}
+Authorization: Bearer {{token}}
+
+
+### 4. ТЕСТ КОНФЛИКТА УДАЛЕНИЯ (409 CONFLICT)
+
+# 4.1. Связывание ассета с бизнес-страницей
+# ВНИМАНИЕ: Замени businessPageId на существующий ID из твоей базы
+@businessPageId = 00000000-0000-0000-0000-000000000000 
+
+POST {{base_url}}/media/{{linkedId}}/link/{{businessPageId}}
+Authorization: Bearer {{token}}
+
+###
+
+# 4.2. Попытка удаления привязанного ассета
+# Ожидаем: 409 Conflict с информативным сообщением
+DELETE {{base_url}}/media/{{linkedId}}
+Authorization: Bearer {{token}}
+
+
+### 5. ОЧИСТКА И ВАЛИДАЦИЯ (DELETE / CLEANUP)
+
+# 5.1. Успешное удаление "сироты"
+# Ожидаем: 204 No Content
+DELETE {{base_url}}/media/{{orphanId}}
+Authorization: Bearer {{token}}
+
+###
+
+# 5.2. Тест ошибки: Загрузка без Slug
+# Жду твоих замечаний по коду, чтобы этот тест возвращал красивый ответ
+POST {{base_url}}/media/upload
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="fail.png"
+Content-Type: image/png
+
+< ./test_input.png
+--WebAppBoundary--
