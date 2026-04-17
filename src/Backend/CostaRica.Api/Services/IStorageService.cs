@@ -28,4 +28,12 @@ public interface IStorageService
     /// <param name="fileName">Имя файла.</param>
     /// <returns>True, если удаление успешно (или файл уже отсутствует).</returns>
     Task<bool> DeleteAsync(string fileName);
+
+    /// <summary>
+    /// Формирует публичный URL для доступа к файлу.
+    /// Это избавляет сервис от необходимости знать префиксы путей (хардкод).
+    /// </summary>
+    /// <param name="fileName">Имя файла в хранилище.</param>
+    /// <returns>Строка с URL (относительным или абсолютным).</returns>
+    string GetPublicUrl(string fileName);
 }

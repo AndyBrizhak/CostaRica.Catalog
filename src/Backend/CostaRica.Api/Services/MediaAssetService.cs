@@ -6,7 +6,6 @@ namespace CostaRica.Api.Services;
 
 /// <summary>
 /// Реализация сервиса управления медиа-ассетами.
-/// Использует Primary Constructor (C# 12) для внедрения зависимостей.
 /// </summary>
 public class MediaAssetService(
     DirectoryDbContext db,
@@ -22,7 +21,7 @@ public class MediaAssetService(
             .Include(m => m.BusinessPages)
             .AsQueryable();
 
-        // 1. Фильтрация по списку ID (запрос GET_MANY)
+        // 1. Фильтрация по списку ID
         if (parameters.Id != null && parameters.Id.Length > 0)
         {
             query = query.Where(m => parameters.Id.Contains(m.Id));
@@ -34,47 +33,46 @@ public class MediaAssetService(
             query = query.Where(m => m.BusinessPages.Any(b => b.Id == parameters.BusinessId.Value));
         }
 
-        // 3. ФИЛЬТР СИРОТ (Orphans): только те, у кого нет связей со страницами
+        // 3. Фильтр "сирот" (Orphans)
         if (parameters.OnlyOrphans)
         {
             query = query.Where(m => !m.BusinessPages.Any());
         }
 
-        // 4. ГЛОБАЛЬНЫЙ ПОИСК (Q) через ILike (PostgreSQL)
+        // 4. Глобальный поиск
         if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
-            var search = $"%{parameters.Q}%";
+            var searchTerm = parameters.Q.Trim().ToLower();
             query = query.Where(m =>
-                EF.Functions.ILike(m.Slug, search) ||
-                EF.Functions.ILike(m.AltTextEn ?? "", search) ||
-                EF.Functions.ILike(m.AltTextEs ?? "", search) ||
-                EF.Functions.ILike(m.FileName, search));
+                m.Slug.ToLower().Contains(searchTerm) ||
+                (m.AltTextEn != null && m.AltTextEn.ToLower().Contains(searchTerm)) ||
+                (m.AltTextEs != null && m.AltTextEs.ToLower().Contains(searchTerm)));
         }
 
         var totalCount = await query.CountAsync(ct);
 
-        // 5. ДИНАМИЧЕСКАЯ СОРТИРОВКА
-        var isDescending = string.Equals(parameters._order, "DESC", StringComparison.OrdinalIgnoreCase);
-        query = parameters._sort?.ToLower() switch
+        // 5. Сортировка с учетом регистра свойств C#
+        // Сопоставляем camelCase из React Admin с PascalCase в Entity Framework
+        var sortProperty = (parameters._sort?.ToLower()) switch
         {
-            "slug" => isDescending ? query.OrderByDescending(m => m.Slug) : query.OrderBy(m => m.Slug),
-            "filename" => isDescending ? query.OrderByDescending(m => m.FileName) : query.OrderBy(m => m.FileName),
-            "createdat" => isDescending ? query.OrderByDescending(m => m.CreatedAt) : query.OrderBy(m => m.CreatedAt),
-            _ => query.OrderByDescending(m => m.CreatedAt) // По умолчанию: новые сверху
+            "createdat" => "CreatedAt",
+            "slug" => "Slug",
+            "filename" => "FileName",
+            "contenttype" => "ContentType",
+            _ => "CreatedAt" // По умолчанию сортируем по дате создания
         };
 
-        // 6. ПАГИНАЦИЯ
-        var start = parameters._start ?? 0;
-        var end = parameters._end ?? 10;
-        var take = end - start;
+        query = parameters._order?.ToUpper() == "DESC"
+            ? query.OrderByDescending(m => EF.Property<object>(m, sortProperty))
+            : query.OrderBy(m => EF.Property<object>(m, sortProperty));
 
+        // 6. Пагинация
         var items = await query
-            .Skip(start)
-            .Take(take > 0 ? take : 10)
-            .Select(m => MapToDto(m))
+            .Skip(parameters._start ?? 0)
+            .Take((parameters._end ?? 10) - (parameters._start ?? 0))
             .ToListAsync(ct);
 
-        return (items, totalCount);
+        return (items.Select(MapToDto), totalCount);
     }
 
     public async Task<MediaAssetResponseDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
@@ -89,26 +87,30 @@ public class MediaAssetService(
 
     public async Task<MediaAssetResponseDto?> UploadAsync(
         Stream fileStream,
-        string originalFileName,
+        string fileName,
         string contentType,
         MediaUploadDto dto,
         CancellationToken ct = default)
     {
-        var fileExtension = Path.GetExtension(originalFileName);
-        var internalFileName = $"{Guid.NewGuid()}{fileExtension}";
+        if (await db.MediaAssets.AnyAsync(m => m.Slug == dto.Slug, ct))
+        {
+            logger.LogWarning("Попытка загрузки дубликата слага: {Slug}", dto.Slug);
+            return null;
+        }
 
-        var savedPath = await storage.SaveAsync(fileStream, internalFileName, ct);
-        if (savedPath == null) return null;
+        var extension = Path.GetExtension(fileName);
+        var storedFileName = $"{Guid.NewGuid()}{extension}";
+
+        var savedName = await storage.SaveAsync(fileStream, storedFileName, ct);
+        if (savedName == null) return null;
 
         var asset = new MediaAsset
         {
-            Id = Guid.NewGuid(),
-            Slug = dto.Slug.ToLowerInvariant(),
-            FileName = internalFileName,
+            Slug = dto.Slug,
+            FileName = savedName,
             ContentType = contentType,
             AltTextEn = dto.AltTextEn,
-            AltTextEs = dto.AltTextEs,
-            CreatedAt = DateTimeOffset.UtcNow
+            AltTextEs = dto.AltTextEs
         };
 
         db.MediaAssets.Add(asset);
@@ -119,10 +121,13 @@ public class MediaAssetService(
 
     public async Task<MediaAssetResponseDto?> UpdateMetadataAsync(Guid id, MediaUpdateDto dto, CancellationToken ct = default)
     {
-        var asset = await db.MediaAssets.FindAsync([id], ct);
+        var asset = await db.MediaAssets
+            .Include(m => m.BusinessPages)
+            .FirstOrDefaultAsync(m => m.Id == id, ct);
+
         if (asset == null) return null;
 
-        asset.Slug = dto.Slug.ToLowerInvariant();
+        asset.Slug = dto.Slug;
         asset.AltTextEn = dto.AltTextEn;
         asset.AltTextEs = dto.AltTextEs;
 
@@ -136,36 +141,19 @@ public class MediaAssetService(
             .Include(m => m.BusinessPages)
             .FirstOrDefaultAsync(m => m.Id == id, ct);
 
-        if (asset == null)
-            return new MediaDeleteResult(MediaDeleteStatus.NotFound);
+        if (asset == null) return new MediaDeleteResult(MediaDeleteStatus.NotFound);
 
-        // ПРОВЕРКА ЗАВИСИМОСТЕЙ: считаем количество страниц, использующих это фото
         int usageCount = asset.BusinessPages.Count;
         if (usageCount > 0)
         {
-            logger.LogWarning("Попытка удаления используемого ассета {Id}. Страниц: {Count}", id, usageCount);
-            return new MediaDeleteResult(
-                MediaDeleteStatus.InUse,
-                usageCount,
-                $"Cannot delete asset: it is used by {usageCount} business page(s).");
+            return new MediaDeleteResult(MediaDeleteStatus.InUse, usageCount);
         }
 
-        try
-        {
-            // Сначала удаляем физический файл
-            await storage.DeleteAsync(asset.FileName);
+        await storage.DeleteAsync(asset.FileName);
+        db.MediaAssets.Remove(asset);
+        await db.SaveChangesAsync(ct);
 
-            // Затем запись в БД
-            db.MediaAssets.Remove(asset);
-            await db.SaveChangesAsync(ct);
-
-            return new MediaDeleteResult(MediaDeleteStatus.Success);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Ошибка при удалении ассета {Id}", id);
-            throw;
-        }
+        return new MediaDeleteResult(MediaDeleteStatus.Success);
     }
 
     public async Task<bool> LinkToBusinessAsync(Guid assetId, Guid businessPageId, CancellationToken ct = default)
@@ -197,14 +185,15 @@ public class MediaAssetService(
         return true;
     }
 
-    private static MediaAssetResponseDto MapToDto(MediaAsset m) => new(
+    private MediaAssetResponseDto MapToDto(MediaAsset m) => new(
         m.Id,
         m.Slug,
         m.FileName,
         m.ContentType,
         m.AltTextEn,
         m.AltTextEs,
-        $"/media-files/{m.FileName}", // Путь для фронтенда
+        storage.GetPublicUrl(m.FileName),
         m.CreatedAt,
-        m.BusinessPages.Select(b => b.Id));
+        m.BusinessPages.Select(b => b.Id)
+    );
 }
