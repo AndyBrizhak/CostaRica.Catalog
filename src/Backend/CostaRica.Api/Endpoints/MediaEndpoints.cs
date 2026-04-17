@@ -9,7 +9,7 @@ public static class MediaEndpoints
 {
     public static void MapMediaEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/media")
+        var group = routes.MapGroup("/api/media")
             .WithTags("Media")
             .RequireAuthorization("ManagementAccess");
 

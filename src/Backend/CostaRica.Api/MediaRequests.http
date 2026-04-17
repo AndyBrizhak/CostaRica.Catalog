@@ -1,9 +1,9 @@
-﻿@base_url = http://localhost:5046
+﻿@base_url = http://localhost:5046/api
 @contentType = application/json
 
 ### 1. АВТОРИЗАЦИЯ
-# @name login
-POST {{base_url}}/api/auth/login
+# @name loginAdmin
+POST {{base_url}}/auth/login
 Content-Type: {{contentType}}
 
 {
