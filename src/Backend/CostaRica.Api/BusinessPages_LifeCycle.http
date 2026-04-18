@@ -1,12 +1,12 @@
 ﻿@base_url = http://localhost:5046
 @contentType = application/json
+@prefix = ADMIN-TEST-{{$timestamp}}
 
-############################################################
-### ЭТАП 1: ПОДГОТОВКА (SUPER ADMIN)
-############################################################
+### ============================================================
+### 1. АВТОРИЗАЦИЯ
+### ============================================================
 
-# 1.1 Вход как Super Admin
-# @name loginAdmin
+# @name login
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
@@ -16,150 +16,178 @@ Content-Type: {{contentType}}
 }
 
 ###
-@adminToken = {{loginAdmin.response.body.$.token}}
+@token = {{login.response.body.$.token}}
 
-# 1.2 Создание инфраструктуры (Провинция, Категория)
-# @name createInfra
+
+### ============================================================
+### 2. СОЗДАНИЕ ВСПОМОГАТЕЛЬНЫХ СУЩНОСТЕЙ
+### ============================================================
+
+### 2.1. Создание Провинции
+# @name createProv
 POST {{base_url}}/api/provinces
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
-{ "name": "Testing Region", "slug": "test-region" }
+{ 
+  "name": "{{prefix}}-Province", 
+  "slug": "prov-{{$guid}}" 
+}
 
 ###
-@provinceId = {{createInfra.response.body.$.id}}
+@provId = {{createProv.response.body.$.id}}
 
-# @name createCat
-POST {{base_url}}/api/google-categories
-Authorization: Bearer {{adminToken}}
+### 2.2. Создание Города
+# @name createCity
+POST {{base_url}}/api/cities
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
-{ "gcid": "test_cat", "nameEn": "Test Category", "nameEs": "Cat de prueba" }
+{
+  "name": "{{prefix}}-City",
+  "slug": "city-{{$guid}}",
+  "provinceId": "{{provId}}"
+}
+
+###
+@cityId = {{createCity.response.body.$.id}}
+
+### 2.3. Создание Группы тегов
+# @name createTagGroup
+POST {{base_url}}/api/tag-groups
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "{{prefix}} Services",
+  "nameEs": "{{prefix}} Servicios",
+  "slug": "group-{{$guid}}"
+}
+
+###
+@tagGroupId = {{createTagGroup.response.body.$.id}}
+
+### 2.4. Создание Тега
+# @name createTag
+POST {{base_url}}/api/tags
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+  "nameEn": "Premium {{prefix}}",
+  "nameEs": "Premium Es {{prefix}}",
+  "slug": "tag-{{$guid}}",
+  "tagGroupId": "{{tagGroupId}}"
+}
+
+###
+@tagId = {{createTag.response.body.$.id}}
+
+### 2.5. Создание Google Категории
+# @name createCat
+POST {{base_url}}/api/google-categories
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
+{
+    "gcid": "gcid_{{$guid}}",
+    "nameEn": "{{prefix}} Food & Drink",
+    "nameEs": "{{prefix}} Comida"
+}
 
 ###
 @catId = {{createCat.response.body.$.id}}
 
+### 2.6. Загрузка Медиа-ассета (Если есть файл test_input.png)
+# @name uploadMedia
+POST {{base_url}}/api/media
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=Boundary
 
-############################################################
-### ЭТАП 2: ПРАВА ДОСТУПА (MANAGER)
-############################################################
+--Boundary
+Content-Disposition: form-data; name="slug"
 
-# 2.1 Регистрация и назначение роли Manager
-# @name regManager
-POST {{base_url}}/api/auth/register
-Content-Type: {{contentType}}
+media-{{$guid}}
+--Boundary
+Content-Disposition: form-data; name="altTextEn"
 
-{ "email": "manager-test@example.com", "password": "Password123!", "userName": "ManagerTester" }
+Auto test image
+--Boundary
+Content-Disposition: form-data; name="file"; filename="test.png"
+Content-Type: image/png
 
-###
-@managerId = {{regManager.response.body.$.id}}
-
-# Назначаем роль от имени Админа
-PUT {{base_url}}/api/admin/users/{{managerId}}/roles
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-
-[ "Manager" ]
-
-###
-
-# 2.2 Вход под Менеджером
-# @name loginManager
-POST {{base_url}}/api/auth/login
-Content-Type: {{contentType}}
-
-{ "email": "manager-test@example.com", "password": "Password123!" }
+< ./test_input.png
+--Boundary--
 
 ###
-@managerToken = {{loginManager.response.body.$.token}}
+@mediaId = {{uploadMedia.response.body.$.id}}
 
 
-############################################################
-### ЭТАП 3: ТЕСТ ДУБЛИКАТОВ И СЛАГОВ (409 CONFLICT)
-############################################################
+### ============================================================
+### 3. СОЗДАНИЕ БИЗНЕС-СТРАНИЦЫ (АДМИН-ЧАСТЬ)
+### ============================================================
 
-# 3.1 Создание страницы (Оригинал)
-# @name createOriginal
+### 3.1. Создание страницы
+# @name createBusiness
 POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{managerToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
-  "name": "Unique Business Name",
-  "slug": "unique-slug",
+  "name": "{{prefix}} Grand Hotel",
+  "slug": "hotel-{{$guid}}",
   "isPublished": true,
   "languageCode": "en",
-  "provinceId": "{{provinceId}}",
+  "description": "Admin created test business.",
+  "provinceId": "{{provId}}",
+  "cityId": "{{cityId}}",
   "primaryCategoryId": "{{catId}}",
-  "location": { "latitude": 9.3, "longitude": 123.3 }
+  "location": {
+    "latitude": 9.9281,
+    "longitude": -84.0907
+  },
+  "contacts": {
+    "phone": "+506 1234-5678",
+    "email": "hotel@{{$guid}}.cr"
+  },
+  "schedule": [
+    { "day": 1, "openTime": "09:00", "closeTime": "18:00" }
+  ],
+  "seo": {
+    "title": "Welcome to {{prefix}}",
+    "description": "SEO description",
+    "keywords": "test, admin, hotel"
+  },
+  "tagIds": ["{{tagId}}"],
+  "mediaIds": ["{{mediaId}}"]
 }
 
 ###
-@pageId = {{createOriginal.response.body.$.id}}
+@businessId = {{createBusiness.response.body.$.id}}
 
-# 3.2 ТЕСТ КОНФЛИКТА: Попытка создать с ТЕМ ЖЕ слагом
-# Ожидается: 409 Conflict
-POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{managerToken}}
+
+### 3.2. Проверка получения созданной записи через Admin API
+GET {{base_url}}/api/admin/business-pages/{{businessId}}
+Authorization: Bearer {{token}}
+
+
+### 3.3. Обновление записи (Смена Slug для проверки истории)
+PUT {{base_url}}/api/admin/business-pages/{{businessId}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
-  "name": "Another Name But Same Slug",
-  "slug": "unique-slug",
-  "provinceId": "{{provinceId}}",
-  "location": { "latitude": 10.0, "longitude": 120.0 }
-}
-
-###
-
-# 3.3 ТЕСТ ИСТОРИИ: Смена слага и проверка OldSlugs
-# Мы меняем "unique-slug" на "new-cool-slug"
-PUT {{base_url}}/api/admin/business-pages/{{pageId}}
-Authorization: Bearer {{managerToken}}
-Content-Type: {{contentType}}
-
-{
-  "name": "Unique Business Name",
-  "slug": "new-cool-slug",
+  "name": "{{prefix}} Updated Name",
+  "slug": "hotel-new-slug-{{$guid}}",
   "isPublished": true,
-  "provinceId": "{{provinceId}}",
-  "location": { "latitude": 9.3, "longitude": 123.3 }
+  "languageCode": "en",
+  "provinceId": "{{provId}}",
+  "cityId": "{{cityId}}",
+  "location": { "latitude": 9.0, "longitude": -84.0 },
+  "tagIds": ["{{tagId}}"],
+  "mediaIds": ["{{mediaId}}"]
 }
 
-###
-# Проверка: В ответе поле "oldSlugs" должно содержать ["unique-slug"]
-GET {{base_url}}/api/admin/business-pages/{{pageId}}
-Authorization: Bearer {{managerToken}}
-
-
-############################################################
-### ЭТАП 4: ТЕСТ УРОВНЕЙ ДОСТУПА (RBAC)
-############################################################
-
-# 4.1 ТЕСТ: Менеджер пытается УДАЛИТЬ страницу
-# Ожидается: 403 Forbidden (т.к. DELETE требует AdminFullAccess)
-DELETE {{base_url}}/api/admin/business-pages/{{pageId}}
-Authorization: Bearer {{managerToken}}
-
-###
-
-# 4.2 ТЕСТ: Админ успешно УДАЛЯЕТ страницу
-# Ожидается: 204 No Content
-DELETE {{base_url}}/api/admin/business-pages/{{pageId}}
-Authorization: Bearer {{adminToken}}
-
-
-############################################################
-### ЭТАП 5: ОЧИСТКА
-############################################################
-
-DELETE {{base_url}}/api/admin/users/{{managerId}}
-Authorization: Bearer {{adminToken}}
-
-###
-DELETE {{base_url}}/api/google-categories/{{catId}}
-Authorization: Bearer {{adminToken}}
-
-###
-DELETE {{base_url}}/api/provinces/{{provinceId}}
-Authorization: Bearer {{adminToken}}
+### 3.4. Проверка X-Total-Count в списке
+GET {{base_url}}/api/admin/business-pages?range=[0,9]&sort=["name","ASC"]
+Authorization: Bearer {{token}}
