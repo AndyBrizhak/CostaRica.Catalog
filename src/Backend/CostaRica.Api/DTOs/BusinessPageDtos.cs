@@ -1,11 +1,17 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using CostaRica.Api.Data;
-using Microsoft.AspNetCore.Mvc;
 
 namespace CostaRica.Api.DTOs;
 
+/// <summary>
+/// Географические координаты (общие для всей системы).
+/// </summary>
 public record GeoPointDto(double Latitude, double Longitude);
 
+/// <summary>
+/// Полный объект ответа для административной панели.
+/// Включает технические поля: IsPublished, OldSlugs, даты создания/обновления.
+/// </summary>
 public record BusinessPageResponseDto(
     Guid Id,
     bool IsPublished,
@@ -31,6 +37,9 @@ public record BusinessPageResponseDto(
     DateTimeOffset UpdatedAt
 );
 
+/// <summary>
+/// DTO для операций создания и обновления (Upsert).
+/// </summary>
 public record BusinessPageUpsertDto(
     [Required] string Name,
     string? Slug,
@@ -49,41 +58,20 @@ public record BusinessPageUpsertDto(
     List<Guid>? MediaIds
 );
 
-public record BusinessPageQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "Name",
-    string? _order = "ASC",
-    string? q = null,
-    Guid? provinceId = null,
-    Guid? cityId = null,
-    bool? isPublished = null
-);
-
-public record BusinessPageCardDto(
-    string Name,
-    string Slug,
-    string? ThumbnailUrl,
-    string? CityName,
-    string? ProvinceName,
-    string? PrimaryCategoryName,
-    GeoPointDto Location,
-    double? Distance
-);
-
-public record DiscoveryFiltersResponseDto(
-    IEnumerable<ProvinceResponseDto> Provinces,
-    IEnumerable<CityResponseDto> Cities,
-    IEnumerable<TagResponseDto> Tags
-);
-
-public record DiscoverySearchParams(
-    Guid? ProvinceId = null,
-    Guid? CityId = null,
-    double? Lat = null,
-    double? Lon = null,
-    double? RadiusInKm = null,
-    Guid[]? TagIds = null,
-    int Page = 1,
-    int PageSize = 10
-);
+/// <summary>
+/// Параметры запроса для React Admin.
+/// Класс поддерживает ручной парсинг JSON из Query String.
+/// </summary>
+public class BusinessPageQueryParameters
+{
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 10;
+    public string? _sort { get; set; } = "CreatedAt";
+    public string? _order { get; set; } = "DESC";
+    public string? q { get; set; }
+    public Guid? provinceId { get; set; }
+    public Guid? cityId { get; set; }
+    public bool? isPublished { get; set; }
+    public string? languageCode { get; set; }
+    public Guid[]? id { get; set; }
+}
