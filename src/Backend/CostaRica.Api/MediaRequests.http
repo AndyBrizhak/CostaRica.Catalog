@@ -1,9 +1,9 @@
-﻿@base_url = http://localhost:5046
+﻿@base_url = http://localhost:5046/api
 @contentType = application/json
 
-### 1. АВТОРИЗАЦИЯ (SUPER ADMIN)
+### 1. АВТОРИЗАЦИЯ
 # @name loginAdmin
-POST {{base_url}}/api/auth/login
+POST {{base_url}}/auth/login
 Content-Type: {{contentType}}
 
 {
@@ -12,76 +12,82 @@ Content-Type: {{contentType}}
 }
 
 ###
-@adminToken = {{loginAdmin.response.body.$.token}}
-
-### 2. АУДИТ И ОЧИСТКА (ВЫПОЛНЯЕТ SUPER ADMIN)
-
-# 2.1. Получить список всех ассетов
-# Выполни этот запрос, чтобы увидеть текущие ID и Slug в базе
-# @name getList
-GET {{base_url}}/media
-Authorization: Bearer {{adminToken}}
-
-###
-
-# 2.2. Удаление конкретного ассета
-# Сюда нужно вставить ID из ответа выше, чтобы очистить базу перед тестом
-DELETE {{base_url}}/media/f7eeb28c-c031-446e-a5f1-ca9611f92175
-
-Authorization: Bearer {{adminToken}}
+@token = {{loginAdmin.response.body.$.token}}
 
 
-### 3. АВТОРИЗАЦИЯ (MANAGER)
-# @name loginManager
-POST {{base_url}}/api/auth/login
-Content-Type: {{contentType}}
+### 2. СОЗДАНИЕ МЕДИА (CREATE / UPLOAD)
 
-{
-  "email": "manager-tags@example.com",
-  "password": "Password123!"
-}
-
-###
-@managerToken = {{loginManager.response.body.$.token}}
-
-
-### 4. ЦИКЛ ТЕСТИРОВАНИЯ МЕНЕДЖЕРА
-
-# 4.1. Создание нового ассета
-# @name uploadMedia
-POST {{base_url}}/media/upload
-Authorization: Bearer {{managerToken}}
+# 2.1. Загрузка файла (POST на корень /api/media)
+# @name createMedia
+POST {{base_url}}/media
+Authorization: Bearer {{token}}
 Content-Type: multipart/form-data; boundary=WebAppBoundary
 
 --WebAppBoundary
 Content-Disposition: form-data; name="slug"
 
-security-test-image
+test-asset-{{$guid}}
 --WebAppBoundary
 Content-Disposition: form-data; name="altTextEn"
 
-Initial Alt Text
+Test English Description
 --WebAppBoundary
-Content-Disposition: form-data; name="file"; filename="test.png"
+Content-Disposition: form-data; name="altTextEs"
+
+Descripción de prueba
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="test_image.png"
 Content-Type: image/png
 
 < ./test_input.png
 --WebAppBoundary--
 
 ###
-@newAssetId = {{uploadMedia.response.body.$.id}}
+@mediaId = {{createMedia.response.body.$.id}}
 
-### 4.2. Обновление метаданных (PUT)
-# Проверка, что менеджер может менять ассет
-PUT {{base_url}}/media/{{newAssetId}}
-Authorization: Bearer {{managerToken}}
+
+### 3. ПОЛУЧЕНИЕ ДАННЫХ (READ)
+
+# 3.1. Список с фильтрацией (только "сироты") 
+GET {{base_url}}/media?filter={"onlyOrphans":true}
+Authorization: Bearer {{token}}
+
+###
+
+# 3.2. Список с сортировкой и пагинацией 
+GET {{base_url}}/media?sort=["createdAt","DESC"]&range=[0,4]
+Authorization: Bearer {{token}}
+
+###
+
+# 3.3. Получение конкретного ассета по ID 
+GET {{base_url}}/media/{{mediaId}}
+Authorization: Bearer {{token}}
+
+
+### 4. ОБНОВЛЕНИЕ МЕТАДАННЫХ (UPDATE)
+
+# 4.1. Обновление Slug и Alt текстов (PUT) 
+PUT {{base_url}}/media/{{mediaId}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
 
 {
-  "altTextEn": "Updated by Manager",
-  "altTextEs": "Actualizado por el gerente"
+  "slug": "updated-slug-{{$guid}}",
+  "altTextEn": "Updated EN Alt",
+  "altTextEs": "Updated ES Alt"
 }
 
-### 4.3. Попытка удаления менеджером (Ожидается 403)
-DELETE {{base_url}}/media/{{newAssetId}}
-Authorization: Bearer {{managerToken}}
+
+### 5. УДАЛЕНИЕ (DELETE)
+
+# 5.1. Удаление ассета 
+DELETE {{base_url}}/media/{{mediaId}}
+Authorization: Bearer {{token}}
+
+###
+
+# 5.2. Тест ошибки удаления (409 Conflict) 
+# Этот запрос стоит запускать на ID, который привязан к какой-либо бизнес-странице
+DELETE {{base_url}}/media/00000000-0000-0000-0000-000000000000
+Authorization: Bearer {{token}}

@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
+using System.IO;
+using Microsoft.Extensions.FileProviders;
 
 // ==================================================================================
 // [CRITICAL: DO NOT REMOVE] Блок совместимости для миграций EF Core и PostgreSQL.
@@ -113,8 +115,11 @@ builder.Services.AddScoped<ITagService, TagService>();
 builder.Services.AddScoped<IGoogleCategoryService, GoogleCategoryService>();
 builder.Services.AddScoped<IMediaAssetService, MediaAssetService>();
 builder.Services.AddScoped<IBusinessPageService, BusinessPageService>();
-builder.Services.AddScoped<IDiscoveryService, DiscoveryService>(); // [NEW] Сервис умного поиска
+builder.Services.AddScoped<IDiscoveryService, DiscoveryService>();
+
+builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<IStorageService, LocalStorageProvider>();
+
 builder.Services.AddScoped<IIdentityService, IdentityService>();
 
 // --- IMAGESHARP (Твоя исходная конфигурация) ---
@@ -150,10 +155,29 @@ var app = builder.Build();
 var wwwrootPath = app.Environment.WebRootPath ?? Path.Combine(app.Environment.ContentRootPath, "wwwroot");
 if (!Directory.Exists(wwwrootPath)) Directory.CreateDirectory(wwwrootPath);
 
+app.UseCors("AllowAll");
+
 app.UseImageSharp();
+
+var mediaStoragePath = app.Configuration["Storage:LocalPath"] ?? "media-files";
+var mediaPublicPrefix = app.Configuration["Storage:PublicUrlPrefix"] ?? "/media-files";
+var mediaFullPath = Path.Combine(app.Environment.ContentRootPath, mediaStoragePath);
+
+if (!Directory.Exists(mediaFullPath))
+{
+    Directory.CreateDirectory(mediaFullPath);
+}
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(mediaFullPath),
+    RequestPath = mediaPublicPrefix
+});
+// ------------------------------
+
 app.MapDefaultEndpoints();
 app.UseStaticFiles();
-app.UseCors("AllowAll");
+
 
 // --- [FIX] Включаем механизмы безопасности ---
 // Сначала проверяем, КТО пришел (JWT токен)

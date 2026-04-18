@@ -5,21 +5,30 @@ namespace CostaRica.Api.Services;
 
 /// <summary>
 /// Реализация хранилища для работы с локальной файловой системой.
-/// Использует путь из конфигурации Storage:LocalPath.
+/// Настройки путей и базового URL считываются из конфигурации (appsettings.json).
 /// </summary>
 public class LocalStorageProvider : IStorageService
 {
     private readonly string _storagePath;
+    private readonly string _publicUrlPrefix;
+    private readonly string _baseUrl;
     private readonly ILogger<LocalStorageProvider> _logger;
 
     public LocalStorageProvider(IConfiguration configuration, ILogger<LocalStorageProvider> logger)
     {
         _logger = logger;
 
-        // Получаем путь из переменной окружения Storage__LocalPath (мапится в Storage:LocalPath)
-        // Если путь не задан, создаем папку "media" в корне приложения по умолчанию
+        // Приоритет отдается значениям из секции Storage в appsettings.json.
+        // LocalPath — физический путь на диске.
         _storagePath = configuration["Storage:LocalPath"]
-                       ?? Path.Combine(Directory.GetCurrentDirectory(), "media");
+                       ?? Path.Combine(Directory.GetCurrentDirectory(), "media-files");
+
+        // PublicUrlPrefix — префикс пути в URL (например, /media-files).
+        _publicUrlPrefix = configuration["Storage:PublicUrlPrefix"] ?? "/media-files";
+
+        // BaseUrl — адрес сервера (например, http://localhost:5046). 
+        // Если он задан, API будет возвращать полные ссылки, понятные React Admin.
+        _baseUrl = configuration["Storage:BaseUrl"] ?? string.Empty;
 
         try
         {
@@ -38,12 +47,11 @@ public class LocalStorageProvider : IStorageService
     {
         try
         {
-            // Гарантируем плоскую структуру: берем только имя файла, игнорируя подпапки в пути
             var safeFileName = Path.GetFileName(fileName);
             var filePath = Path.Combine(_storagePath, safeFileName);
 
-            using var targetStream = File.Create(filePath);
-            await fileStream.CopyToAsync(targetStream, ct);
+            using var file = File.Create(filePath);
+            await fileStream.CopyToAsync(file, ct);
 
             return safeFileName;
         }
@@ -63,7 +71,6 @@ public class LocalStorageProvider : IStorageService
 
             if (!File.Exists(filePath))
             {
-                _logger.LogWarning("Файл не найден в хранилище: {FileName}", fileName);
                 return Task.FromResult<Stream?>(null);
             }
 
@@ -92,8 +99,31 @@ public class LocalStorageProvider : IStorageService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Ошибка при удалении файла с диска: {FileName}", fileName);
+            _logger.LogError(ex, "Ошибка при удалении файла: {FileName}", fileName);
             return Task.FromResult(false);
         }
+    }
+
+    /// <summary>
+    /// Формирует публичный URL. Если в конфигурации задан BaseUrl, возвращается абсолютный путь.
+    /// Это позволяет избежать дублирования логики и легко переключаться между окружениями.
+    /// </summary>
+    public string GetPublicUrl(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName)) return string.Empty;
+
+        // Очищаем префикс и имя файла от лишних слешей для корректной склейки.
+        var prefix = _publicUrlPrefix.Trim('/', ' ');
+        var name = fileName.TrimStart('/');
+
+        if (string.IsNullOrWhiteSpace(_baseUrl))
+        {
+            // Возвращаем относительный путь, если базовый URL не настроен.
+            return $"/{prefix}/{name}";
+        }
+
+        // Собираем абсолютный URL (например, http://localhost:5046/media-files/image.jpg).
+        var baseUri = _baseUrl.TrimEnd('/');
+        return $"{baseUri}/{prefix}/{name}";
     }
 }

@@ -1,21 +1,45 @@
-﻿namespace CostaRica.Api.DTOs;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace CostaRica.Api.DTOs;
 
 /// <summary>
-/// Параметры запроса для списка медиа-файлов (стандарт React Admin)
+/// Статусы результата удаления медиа-ассета.
 /// </summary>
-public record MediaQueryParameters(
-    int? _start = 0,
-    int? _end = 10,
-    string? _sort = "CreatedAt",
-    string? _order = "DESC",
-    string? q = null,
-    Guid[]? id = null,
-    Guid? businessId = null,
-    bool onlyOrphans = false
-);
+public enum MediaDeleteStatus
+{
+    Success,
+    NotFound,
+    InUse
+}
 
 /// <summary>
-/// Объект ответа для медиа-ассета (плоская структура)
+/// Расширенный результат удаления с информацией о зависимостях.
+/// </summary>
+public record MediaDeleteResult(
+    MediaDeleteStatus Status,
+    int UsageCount = 0,
+    string? Message = null);
+
+/// <summary>
+/// Параметры запроса для списка медиа-файлов.
+/// Адаптировано под ручной парсинг параметров React Admin (sort, range, filter).
+/// </summary>
+public class MediaQueryParameters
+{
+    public int? _start { get; set; } = 0;
+    public int? _end { get; set; } = 10;
+    public string? _sort { get; set; } = "CreatedAt";
+    public string? _order { get; set; } = "DESC";
+
+    // Фильтры
+    public Guid[]? Id { get; set; }
+    public Guid? BusinessId { get; set; }
+    public bool OnlyOrphans { get; set; }
+    public string? Q { get; set; } // Глобальный поиск (Slug, AltText)
+}
+
+/// <summary>
+/// Объект ответа для медиа-ассета (стандарт React Admin).
 /// </summary>
 public record MediaAssetResponseDto(
     Guid Id,
@@ -29,22 +53,17 @@ public record MediaAssetResponseDto(
     IEnumerable<Guid> RelatedBusinessIds);
 
 /// <summary>
-/// Объект для загрузки нового файла
+/// Объект для загрузки нового файла.
 /// </summary>
 public record MediaUploadDto(
-    string Slug,
+    [Required] string Slug,
     string? AltTextEn,
     string? AltTextEs);
 
 /// <summary>
-/// Объект для обновления метаданных ассета
+/// Объект для обновления метаданных ассета.
 /// </summary>
 public record MediaUpdateDto(
-    string Slug,
+    [Required] string Slug,
     string? AltTextEn,
     string? AltTextEs);
-
-/// <summary>
-/// Результат операции удаления (Exception-free)
-/// </summary>
-public record MediaDeleteResult(bool Success, string? ErrorMessage = null);

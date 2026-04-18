@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace CostaRica.Api.Services;
 
+/// <summary>
+/// Реализация сервиса управления медиа-ассетами.
+/// </summary>
 public class MediaAssetService(
     DirectoryDbContext db,
     IStorageService storage,
@@ -18,53 +21,56 @@ public class MediaAssetService(
             .Include(m => m.BusinessPages)
             .AsQueryable();
 
-        // 1. Фильтрация по списку ID (запрос GET_MANY в React Admin)
-        if (parameters.id != null && parameters.id.Length > 0)
+        // 1. Фильтрация по списку ID
+        if (parameters.Id != null && parameters.Id.Length > 0)
         {
-            query = query.Where(m => parameters.id.Contains(m.Id));
+            query = query.Where(m => parameters.Id.Contains(m.Id));
         }
 
-        // 2. Фильтрация по привязке к конкретному бизнесу
-        if (parameters.businessId.HasValue)
+        // 2. Фильтрация по конкретному бизнесу
+        if (parameters.BusinessId.HasValue)
         {
-            query = query.Where(m => m.BusinessPages.Any(b => b.Id == parameters.businessId.Value));
+            query = query.Where(m => m.BusinessPages.Any(b => b.Id == parameters.BusinessId.Value));
         }
 
-        // 3. Фильтрация "сирот" (файлы без связей)
-        if (parameters.onlyOrphans)
+        // 3. Фильтр "сирот" (Orphans)
+        if (parameters.OnlyOrphans)
         {
-            query = query.Where(m => m.BusinessPages.Count == 0);
+            query = query.Where(m => !m.BusinessPages.Any());
         }
 
-        // 4. Поиск (q) — используется ToLower().Contains() для совместимости с InMemory БД в тестах
-        if (!string.IsNullOrWhiteSpace(parameters.q))
+        // 4. Глобальный поиск
+        if (!string.IsNullOrWhiteSpace(parameters.Q))
         {
-            var term = parameters.q.ToLower();
+            var searchTerm = parameters.Q.Trim().ToLower();
             query = query.Where(m =>
-                m.Slug.ToLower().Contains(term) ||
-                (m.AltTextEn != null && m.AltTextEn.ToLower().Contains(term)) ||
-                (m.AltTextEs != null && m.AltTextEs.ToLower().Contains(term)) ||
-                m.FileName.ToLower().Contains(term));
+                m.Slug.ToLower().Contains(searchTerm) ||
+                (m.AltTextEn != null && m.AltTextEn.ToLower().Contains(searchTerm)) ||
+                (m.AltTextEs != null && m.AltTextEs.ToLower().Contains(searchTerm)));
         }
 
-        // 5. Подсчет общего количества до применения пагинации
         var totalCount = await query.CountAsync(ct);
 
-        // 6. Динамическая сортировка
-        query = parameters._sort switch
+        // 5. Сортировка с учетом регистра свойств C#
+        // Сопоставляем camelCase из React Admin с PascalCase в Entity Framework
+        var sortProperty = (parameters._sort?.ToLower()) switch
         {
-            "Slug" => parameters._order == "DESC" ? query.OrderByDescending(m => m.Slug) : query.OrderBy(m => m.Slug),
-            "ContentType" => parameters._order == "DESC" ? query.OrderByDescending(m => m.ContentType) : query.OrderBy(m => m.ContentType),
-            "CreatedAt" => parameters._order == "DESC" ? query.OrderByDescending(m => m.CreatedAt) : query.OrderBy(m => m.CreatedAt),
-            _ => query.OrderByDescending(m => m.CreatedAt) // По умолчанию — новые сверху
+            "createdat" => "CreatedAt",
+            "slug" => "Slug",
+            "filename" => "FileName",
+            "contenttype" => "ContentType",
+            _ => "CreatedAt" // По умолчанию сортируем по дате создания
         };
 
-        // 7. Пагинация на основе границ _start и _end
-        var start = parameters._start ?? 0;
-        var end = parameters._end ?? 10;
-        var take = Math.Max(end - start, 0);
+        query = parameters._order?.ToUpper() == "DESC"
+            ? query.OrderByDescending(m => EF.Property<object>(m, sortProperty))
+            : query.OrderBy(m => EF.Property<object>(m, sortProperty));
 
-        var items = await query.Skip(start).Take(take).ToListAsync(ct);
+        // 6. Пагинация
+        var items = await query
+            .Skip(parameters._start ?? 0)
+            .Take((parameters._end ?? 10) - (parameters._start ?? 0))
+            .ToListAsync(ct);
 
         return (items.Select(MapToDto), totalCount);
     }
@@ -81,28 +87,30 @@ public class MediaAssetService(
 
     public async Task<MediaAssetResponseDto?> UploadAsync(
         Stream fileStream,
-        string originalFileName,
+        string fileName,
         string contentType,
         MediaUploadDto dto,
         CancellationToken ct = default)
     {
-        // Проверка уникальности слага
-        var slugExists = await db.MediaAssets.AnyAsync(m => m.Slug == dto.Slug, ct);
-        if (slugExists) return null;
+        if (await db.MediaAssets.AnyAsync(m => m.Slug == dto.Slug, ct))
+        {
+            logger.LogWarning("Попытка загрузки дубликата слага: {Slug}", dto.Slug);
+            return null;
+        }
 
-        // Сохранение физического файла
-        var fileName = await storage.SaveAsync(fileStream, originalFileName, ct);
-        if (fileName == null) return null;
+        var extension = Path.GetExtension(fileName);
+        var storedFileName = $"{Guid.NewGuid()}{extension}";
+
+        var savedName = await storage.SaveAsync(fileStream, storedFileName, ct);
+        if (savedName == null) return null;
 
         var asset = new MediaAsset
         {
-            Id = Guid.NewGuid(),
             Slug = dto.Slug,
-            FileName = fileName,
+            FileName = savedName,
             ContentType = contentType,
             AltTextEn = dto.AltTextEn,
-            AltTextEs = dto.AltTextEs,
-            CreatedAt = DateTimeOffset.UtcNow
+            AltTextEs = dto.AltTextEs
         };
 
         db.MediaAssets.Add(asset);
@@ -113,76 +121,39 @@ public class MediaAssetService(
 
     public async Task<MediaAssetResponseDto?> UpdateMetadataAsync(Guid id, MediaUpdateDto dto, CancellationToken ct = default)
     {
-        try
-        {
-            var asset = await db.MediaAssets.FirstOrDefaultAsync(m => m.Id == id, ct);
-            if (asset == null) return null;
+        var asset = await db.MediaAssets
+            .Include(m => m.BusinessPages)
+            .FirstOrDefaultAsync(m => m.Id == id, ct);
 
-            // 1. Обновляем Slug только если он явно передан и не является пустым.
-            // Это защищает от ошибки PostgresException 23502 (NOT NULL violation).
-            if (!string.IsNullOrWhiteSpace(dto.Slug) && asset.Slug != dto.Slug)
-            {
-                var exists = await db.MediaAssets.AnyAsync(m => m.Slug == dto.Slug && m.Id != id, ct);
-                if (exists) return null; // Возвращаем null, если новый слаг уже занят
+        if (asset == null) return null;
 
-                asset.Slug = dto.Slug;
-            }
+        asset.Slug = dto.Slug;
+        asset.AltTextEn = dto.AltTextEn;
+        asset.AltTextEs = dto.AltTextEs;
 
-            // 2. Обновляем метаданные только если они переданы (не равны null).
-            // Если поле отсутствует в JSON, оно будет null в DTO, и мы его игнорируем,
-            // сохраняя текущее значение в базе данных.
-            if (dto.AltTextEn != null)
-            {
-                asset.AltTextEn = dto.AltTextEn;
-            }
-
-            if (dto.AltTextEs != null)
-            {
-                asset.AltTextEs = dto.AltTextEs;
-            }
-
-            // 3. Сохранение изменений
-            await db.SaveChangesAsync(ct);
-            return MapToDto(asset);
-        }
-        catch (Exception)
-        {
-            // Все непредвиденные ошибки (например, проблемы со связью с БД) 
-            // обрабатываются внутри, возвращая null для безопасного завершения запроса.
-            return null;
-        }
+        await db.SaveChangesAsync(ct);
+        return MapToDto(asset);
     }
 
     public async Task<MediaDeleteResult> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        try
+        var asset = await db.MediaAssets
+            .Include(m => m.BusinessPages)
+            .FirstOrDefaultAsync(m => m.Id == id, ct);
+
+        if (asset == null) return new MediaDeleteResult(MediaDeleteStatus.NotFound);
+
+        int usageCount = asset.BusinessPages.Count;
+        if (usageCount > 0)
         {
-            var asset = await db.MediaAssets
-                .Include(m => m.BusinessPages)
-                .FirstOrDefaultAsync(m => m.Id == id, ct);
-
-            if (asset == null) return new MediaDeleteResult(false, "Ассет не найден");
-
-            // Защита от удаления: нельзя удалять то, что используется на страницах
-            if (asset.BusinessPages.Count > 0)
-                return new MediaDeleteResult(false, $"Невозможно удалить: ассет используется в {asset.BusinessPages.Count} бизнес-страницах");
-
-            var fileName = asset.FileName;
-
-            // Сначала удаляем из БД
-            db.MediaAssets.Remove(asset);
-            await db.SaveChangesAsync(ct);
-
-            // Только при успехе в БД удаляем файл физически
-            await storage.DeleteAsync(fileName);
-
-            return new MediaDeleteResult(true);
+            return new MediaDeleteResult(MediaDeleteStatus.InUse, usageCount);
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Ошибка при удалении медиа-ассета {Id}", id);
-            return new MediaDeleteResult(false, "Внутренняя ошибка сервера при удалении");
-        }
+
+        await storage.DeleteAsync(asset.FileName);
+        db.MediaAssets.Remove(asset);
+        await db.SaveChangesAsync(ct);
+
+        return new MediaDeleteResult(MediaDeleteStatus.Success);
     }
 
     public async Task<bool> LinkToBusinessAsync(Guid assetId, Guid businessPageId, CancellationToken ct = default)
@@ -214,14 +185,14 @@ public class MediaAssetService(
         return true;
     }
 
-    private static MediaAssetResponseDto MapToDto(MediaAsset m) => new(
+    private MediaAssetResponseDto MapToDto(MediaAsset m) => new(
         m.Id,
         m.Slug,
         m.FileName,
         m.ContentType,
         m.AltTextEn,
         m.AltTextEs,
-        $"/media/{m.Id}/{m.Slug}", // Формируем SEO-friendly URL
+        storage.GetPublicUrl(m.FileName),
         m.CreatedAt,
         m.BusinessPages.Select(b => b.Id)
     );

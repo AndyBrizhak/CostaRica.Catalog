@@ -1,7 +1,7 @@
 ﻿using CostaRica.Api.DTOs;
 using CostaRica.Api.Services;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http;
+using System.Text.Json;
 
 namespace CostaRica.Api.Endpoints;
 
@@ -9,15 +9,50 @@ public static class MediaEndpoints
 {
     public static void MapMediaEndpoints(this IEndpointRouteBuilder routes)
     {
-        var group = routes.MapGroup("/media")
+        // Устанавливаем базовую группу /api/media для синхронизации с VITE_API_URL
+        var group = routes.MapGroup("/api/media")
             .WithTags("Media")
             .RequireAuthorization("ManagementAccess");
 
-        // 1. Получение списка (GET)
-        // [AsParameters] остается только у MediaQueryParameters
-        group.MapGet("/", async ([AsParameters] MediaQueryParameters @params, IMediaAssetService service, HttpContext context) =>
+        // 1. GET /api/media — Получение списка (List)
+        group.MapGet("/", async (HttpContext context, IMediaAssetService service, CancellationToken ct) =>
         {
-            var (items, totalCount) = await service.GetAllAsync(@params);
+            var query = context.Request.Query;
+            var parameters = new MediaQueryParameters();
+
+            var sortJson = query["sort"].ToString();
+            if (!string.IsNullOrWhiteSpace(sortJson) && sortJson.StartsWith('['))
+            {
+                var sortArray = JsonSerializer.Deserialize<string[]>(sortJson);
+                if (sortArray?.Length == 2)
+                {
+                    parameters._sort = sortArray[0];
+                    parameters._order = sortArray[1].ToUpper();
+                }
+            }
+
+            var rangeJson = query["range"].ToString();
+            if (!string.IsNullOrWhiteSpace(rangeJson) && rangeJson.StartsWith('['))
+            {
+                var rangeArray = JsonSerializer.Deserialize<int[]>(rangeJson);
+                if (rangeArray?.Length == 2)
+                {
+                    parameters._start = rangeArray[0];
+                    parameters._end = rangeArray[1] + 1;
+                }
+            }
+
+            var filterJson = query["filter"].ToString();
+            if (!string.IsNullOrWhiteSpace(filterJson) && filterJson.StartsWith('{'))
+            {
+                using var doc = JsonDocument.Parse(filterJson);
+                var root = doc.RootElement;
+                if (root.TryGetProperty("q", out var qProp)) parameters.Q = qProp.GetString();
+                if (root.TryGetProperty("onlyOrphans", out var oProp)) parameters.OnlyOrphans = oProp.GetBoolean();
+                if (root.TryGetProperty("id", out var idProp)) parameters.Id = JsonSerializer.Deserialize<Guid[]>(idProp.GetRawText());
+            }
+
+            var (items, totalCount) = await service.GetAllAsync(parameters, ct);
 
             context.Response.Headers.Append("X-Total-Count", totalCount.ToString());
             context.Response.Headers.Append("Access-Control-Expose-Headers", "X-Total-Count");
@@ -26,61 +61,68 @@ public static class MediaEndpoints
         })
         .WithName("GetMediaList");
 
-        // 2. Получение по ID (GET)
-        group.MapGet("/{id:guid}", async (Guid id, IMediaAssetService service) =>
+        // 2. GET /api/media/{id} — Получение по ID (One)
+        group.MapGet("/{id:guid}", async (Guid id, IMediaAssetService service, CancellationToken ct) =>
         {
-            var result = await service.GetByIdAsync(id);
+            var result = await service.GetByIdAsync(id, ct);
             return result is not null ? Results.Ok(result) : Results.NotFound();
         })
         .WithName("GetMediaById");
 
-        // 3. SEO-эндпоинт (GET)
-        group.MapGet("/{id:guid}/{slug}", async (Guid id, string slug, IMediaAssetService service) =>
-        {
-            var result = await service.GetByIdAsync(id);
-            if (result == null || result.Slug != slug) return Results.NotFound();
-            return Results.Ok(result);
-        })
-        .WithName("GetMediaBySlug");
-
-        // 4. Загрузка (POST) - Доступ: Manager+
-        group.MapPost("/upload", async (
-            IFormFile file,
-            [FromForm] string slug,
+        // 3. POST /api/media — Загрузка (Create)
+        // Убрали /upload, чтобы соответствовать стандарту React Admin POST /api/media
+        group.MapPost("/", async (
+            IFormFile? file,
+            [FromForm] string? slug,
             [FromForm] string? altTextEn,
             [FromForm] string? altTextEs,
-            IMediaAssetService service) =>
+            IMediaAssetService service,
+            CancellationToken ct) =>
         {
+            if (file == null || file.Length == 0)
+                return Results.BadRequest(new { error = "No file uploaded." });
+
             if (string.IsNullOrWhiteSpace(slug))
-                return Results.BadRequest("Slug обязателен");
+                return Results.BadRequest(new { error = "Slug is required." });
 
             var dto = new MediaUploadDto(slug, altTextEn, altTextEs);
 
             using var stream = file.OpenReadStream();
-            var result = await service.UploadAsync(stream, file.FileName, file.ContentType, dto);
+            var result = await service.UploadAsync(stream, file.FileName, file.ContentType, dto, ct);
 
             return result != null
-                ? Results.Created($"/media/{result.Id}/{result.Slug}", result)
-                : Results.BadRequest("Ошибка загрузки");
+                ? Results.Created($"/api/media/{result.Id}", result)
+                : Results.Conflict(new { error = "A media asset with this slug already exists." });
         })
         .DisableAntiforgery()
-        .WithName("UploadMedia");
+        .WithName("CreateMedia");
 
-        // 5. Обновление метаданных (PUT) - Доступ: Manager+
-        group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, IMediaAssetService service) =>
+        // 4. PUT /api/media/{id} — Обновление (Update)
+        group.MapPut("/{id:guid}", async (Guid id, MediaUpdateDto dto, IMediaAssetService service, CancellationToken ct) =>
         {
-            var result = await service.UpdateMetadataAsync(id, dto);
+            if (string.IsNullOrWhiteSpace(dto.Slug))
+                return Results.BadRequest(new { error = "Slug is required." });
+
+            var result = await service.UpdateMetadataAsync(id, dto, ct);
             return result != null ? Results.Ok(result) : Results.NotFound();
         })
-        .WithName("UpdateMediaMetadata");
+        .WithName("UpdateMedia");
 
-        // 6. Удаление (DELETE) - Доступ: Admin+
-        group.MapDelete("/{id:guid}", async (Guid id, IMediaAssetService service) =>
+        // 5. DELETE /api/media/{id} — Удаление
+        group.MapDelete("/{id:guid}", async (Guid id, IMediaAssetService service, CancellationToken ct) =>
         {
-            var result = await service.DeleteAsync(id);
-            return result.Success
-                ? Results.NoContent()
-                : Results.BadRequest(new { message = result.ErrorMessage });
+            var result = await service.DeleteAsync(id, ct);
+
+            return result.Status switch
+            {
+                MediaDeleteStatus.Success => Results.NoContent(),
+                MediaDeleteStatus.NotFound => Results.NotFound(),
+                MediaDeleteStatus.InUse => Results.Conflict(new
+                {
+                    error = $"Conflict: Image is used on {result.UsageCount} business page(s). Delete links first."
+                }),
+                _ => Results.BadRequest(new { error = "An unexpected error occurred." })
+            };
         })
         .RequireAuthorization("AdminFullAccess")
         .WithName("DeleteMedia");
