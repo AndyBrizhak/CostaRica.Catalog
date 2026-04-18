@@ -20,5 +20,7 @@ public interface IDiscoveryService
         DiscoverySearchParams @params,
         CancellationToken ct = default);
 
-    Task<BusinessPageDiscoveryDto?> GetBySlugAsync(string slug, CancellationToken ct = default);
+    Task<BusinessPageResponseDto?> GetBySlugAsync(
+        string slug,
+        CancellationToken ct = default);
 }
