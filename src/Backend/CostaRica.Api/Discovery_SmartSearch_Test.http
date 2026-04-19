@@ -1,11 +1,12 @@
 @base_url = http://localhost:5046
 @contentType = application/json
+@prefix = DSC-{{$timestamp}}
 
-############################################################
-### ЭТАП 1: АВТОРИЗАЦИЯ (SUPER ADMIN)
-############################################################
+### ============================================================
+### 1. АВТОРИЗАЦИЯ
+### ============================================================
 
-# @name loginAdmin
+# @name login
 POST {{base_url}}/api/auth/login
 Content-Type: {{contentType}}
 
@@ -15,241 +16,162 @@ Content-Type: {{contentType}}
 }
 
 ###
-@adminToken = {{loginAdmin.response.body.$.token}}
+@token = {{login.response.body.$.token}}
 
 
-############################################################
-### ЭТАП 2: ГЕОГРАФИЯ (ПРОВИНЦИИ И ГОРОДА)
-############################################################
+### ============================================================
+### 2. ПОДГОТОВКА ИНФРАСТРУКТУРЫ (СПРАВОЧНИКИ)
+### ============================================================
 
-# 2.1 Провинции
+### 2.1 Провинция 1 (San José)
 # @name createProvSJ
 POST {{base_url}}/api/provinces
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
-{ "name": "San José", "slug": "san-jose" }
+
+{ "name": "{{prefix}}-SanJose", "slug": "sj-{{$guid}}" }
 
 ###
+@provSJ = {{createProvSJ.response.body.$.id}}
+
+### 2.2 Провинция 2 (Alajuela)
 # @name createProvAL
 POST {{base_url}}/api/provinces
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
-{ "name": "Alajuela", "slug": "alajuela" }
+
+{ "name": "{{prefix}}-Alajuela", "slug": "al-{{$guid}}" }
 
 ###
-@idSJ = {{createProvSJ.response.body.$.id}}
-@idAL = {{createProvAL.response.body.$.id}}
+@provAL = {{createProvAL.response.body.$.id}}
 
-
-# 2.2 Города
+### 2.3 Город в San José (Escazú)
 # @name createCityEscazu
 POST {{base_url}}/api/cities
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
-{ "name": "Escazú", "slug": "escazu", "provinceId": "{{idSJ}}" }
+
+{ "name": "Escazu-{{prefix}}", "slug": "escazu-{{$guid}}", "provinceId": "{{provSJ}}" }
 
 ###
-# @name createCitySantaAna
+@cityEscazu = {{createCityEscazu.response.body.$.id}}
+
+### 2.4 Город в Alajuela (Alajuela Center)
+# @name createCityAlajuela
 POST {{base_url}}/api/cities
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
-{ "name": "Santa Ana", "slug": "santa-ana", "provinceId": "{{idSJ}}" }
+
+{ "name": "Alajuela-{{prefix}}", "slug": "alajuela-{{$guid}}", "provinceId": "{{provAL}}" }
 
 ###
-# @name createCityFortuna
-POST {{base_url}}/api/cities
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{ "name": "La Fortuna", "slug": "la-fortuna", "provinceId": "{{idAL}}" }
+@cityAlajuela = {{createCityAlajuela.response.body.$.id}}
 
-###
-@idEscazu = {{createCityEscazu.response.body.$.id}}
-@idSantaAna = {{createCitySantaAna.response.body.$.id}}
-@idFortuna = {{createCityFortuna.response.body.$.id}}
-
-
-############################################################
-### ЭТАП 3: ТЕГИ И КАТЕГОРИИ
-############################################################
-
-# 3.1 Группы тегов
-# @name createGroupAmenities
-POST {{base_url}}/api/tag-groups
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{ "nameEn": "Amenities", "nameEs": "Comodidades", "slug": "amenities" }
-
-###
-# @name createGroupCuisine
-POST {{base_url}}/api/tag-groups
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{ "nameEn": "Cuisine", "nameEs": "Cocina", "slug": "cuisine" }
-
-###
-@idGrpAmen = {{createGroupAmenities.response.body.$.id}}
-@idGrpCuisine = {{createGroupCuisine.response.body.$.id}}
-
-
-# 3.2 Теги
-# @name tagWiFi
-POST {{base_url}}/api/tags
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{ "nameEn": "WiFi", "nameEs": "WiFi", "slug": "wifi", "tagGroupId": "{{idGrpAmen}}" }
-
-###
-# @name tagParking
-POST {{base_url}}/api/tags
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{ "nameEn": "Parking", "nameEs": "Parqueo", "slug": "parking", "tagGroupId": "{{idGrpAmen}}" }
-
-###
-# @name tagPizza
-POST {{base_url}}/api/tags
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{ "nameEn": "Pizza", "nameEs": "Pizza", "slug": "pizza", "tagGroupId": "{{idGrpCuisine}}" }
-
-###
-@idWiFi = {{tagWiFi.response.body.$.id}}
-@idParking = {{tagParking.response.body.$.id}}
-@idPizza = {{tagPizza.response.body.$.id}}
-
-
-# 3.3 Категория
-# @name createCategory
+### 2.5 Категории (Food vs Hotel)
+# @name createCatFood
 POST {{base_url}}/api/google-categories
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
-{ "gcid": "restaurant", "nameEn": "Restaurant", "nameEs": "Restaurante" }
+
+{ "gcid": "food_{{$guid}}", "nameEn": "Food-{{prefix}}", "nameEs": "Comida" }
 
 ###
-@idCat = {{createCategory.response.body.$.id}}
+@catFood = {{createCatFood.response.body.$.id}}
 
-
-############################################################
-### ЭТАП 4: БИЗНЕС-СТРАНИЦЫ (6 ОБЪЕКТОВ ДЛЯ ТЕСТОВ)
-############################################################
-
-# 4.1 Escazu: Pizza + WiFi (~6.5 км от центра SJ)
-POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{adminToken}}
+# @name createCatHotel
+POST {{base_url}}/api/google-categories
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
+
+{ "gcid": "hotel_{{$guid}}", "nameEn": "Hotel-{{prefix}}", "nameEs": "Hotel" }
+
+###
+@catHotel = {{createCatHotel.response.body.$.id}}
+
+
+### ============================================================
+### 3. СОЗДАНИЕ БИЗНЕС-СТРАНИЦ (РАЗНЫЕ ЛОКАЦИИ)
+### ============================================================
+
+### 3.1 Бизнес №1: Ресторан в Сан-Хосе (Escazu)
+POST {{base_url}}/api/admin/business-pages
+Authorization: Bearer {{token}}
+Content-Type: {{contentType}}
+
 {
-  "name": "Escazu Pizza Hut", "slug": "escazu-pizza", "isPublished": true,
-  "provinceId": "{{idSJ}}", "cityId": "{{idEscazu}}", "primaryCategoryId": "{{idCat}}",
-  "tagIds": ["{{idPizza}}", "{{idWiFi}}"],
-  "location": { "latitude": 9.9200, "longitude": -84.1400 }
+  "name": "Pizza Palace {{prefix}}",
+  "slug": "pizza-{{$guid}}",
+  "isPublished": true,
+  "languageCode": "en",
+  "provinceId": "{{provSJ}}",
+  "cityId": "{{cityEscazu}}",
+  "primaryCategoryId": "{{catFood}}",
+  "location": { "latitude": 9.9320, "longitude": -84.1450 },
+  "contacts": { "phone": "111" }, "seo": { "title": "Pizza" }, "schedule": []
 }
 
-###
-# 4.2 Escazu: Only Parking (~7 км от центра SJ)
+### 3.2 Бизнес №2: Отель в Сан-Хосе (Escazu) - Рядом с пиццерией
 POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
+
 {
-  "name": "Escazu Parking Central", "slug": "escazu-parking", "isPublished": true,
-  "provinceId": "{{idSJ}}", "cityId": "{{idEscazu}}", "primaryCategoryId": "{{idCat}}",
-  "tagIds": ["{{idParking}}"],
-  "location": { "latitude": 9.9250, "longitude": -84.1450 }
+  "name": "Luxury Hotel {{prefix}}",
+  "slug": "hotel-sj-{{$guid}}",
+  "isPublished": true,
+  "languageCode": "en",
+  "provinceId": "{{provSJ}}",
+  "cityId": "{{cityEscazu}}",
+  "primaryCategoryId": "{{catHotel}}",
+  "location": { "latitude": 9.9350, "longitude": -84.1480 },
+  "contacts": { "phone": "222" }, "seo": { "title": "Hotel SJ" }, "schedule": []
 }
 
-###
-# 4.3 Santa Ana: WiFi + Parking (~11 км от центра SJ)
+### 3.3 Бизнес №3: Отель в Алахуэле (~15-20км от Сан-Хосе)
 POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{adminToken}}
+Authorization: Bearer {{token}}
 Content-Type: {{contentType}}
-{
-  "name": "Santa Ana Work Space", "slug": "santa-ana-work", "isPublished": true,
-  "provinceId": "{{idSJ}}", "cityId": "{{idSantaAna}}", "primaryCategoryId": "{{idCat}}",
-  "tagIds": ["{{idWiFi}}", "{{idParking}}"],
-  "location": { "latitude": 9.9320, "longitude": -84.1800 }
-}
 
-###
-# 4.4 Santa Ana: Only Pizza (~10.5 км от центра SJ)
-POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
 {
-  "name": "Santa Ana Pizza Place", "slug": "santa-ana-pizza", "isPublished": true,
-  "provinceId": "{{idSJ}}", "cityId": "{{idSantaAna}}", "primaryCategoryId": "{{idCat}}",
-  "tagIds": ["{{idPizza}}"],
-  "location": { "latitude": 9.9350, "longitude": -84.1750 }
-}
-
-###
-# 4.5 Fortuna: Pizza + WiFi (~100 км от центра SJ)
-POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{
-  "name": "Fortuna Lake Food", "slug": "fortuna-pizza", "isPublished": true,
-  "provinceId": "{{idAL}}", "cityId": "{{idFortuna}}", "primaryCategoryId": "{{idCat}}",
-  "tagIds": ["{{idPizza}}", "{{idWiFi}}"],
-  "location": { "latitude": 10.4700, "longitude": -84.6400 }
-}
-
-###
-# 4.6 Fortuna: Only WiFi
-POST {{base_url}}/api/admin/business-pages
-Authorization: Bearer {{adminToken}}
-Content-Type: {{contentType}}
-{
-  "name": "Fortuna Coffee", "slug": "fortuna-coffee", "isPublished": true,
-  "provinceId": "{{idAL}}", "cityId": "{{idFortuna}}", "primaryCategoryId": "{{idCat}}",
-  "tagIds": ["{{idWiFi}}"],
-  "location": { "latitude": 10.4710, "longitude": -84.6410 }
+  "name": "Airport Stay {{prefix}}",
+  "slug": "hotel-al-{{$guid}}",
+  "isPublished": true,
+  "languageCode": "en",
+  "provinceId": "{{provAL}}",
+  "cityId": "{{cityAlajuela}}",
+  "primaryCategoryId": "{{catHotel}}",
+  "location": { "latitude": 10.0020, "longitude": -84.2120 },
+  "contacts": { "phone": "333" }, "seo": { "title": "Hotel AL" }, "schedule": []
 }
 
 
-############################################################
-### ЭТАП 5: ГЕО-ПОИСК И РАНЖИРОВАНИЕ (ПУБЛИЧНО)
-############################################################
+### ============================================================
+### 4. ТЕСТИРОВАНИЕ DISCOVERY (ПУБЛИЧНЫЙ ПОИСК)
+### ============================================================
 
-### 5.1 Поиск в радиусе 50км от центра SJ (9.9333, -84.0833)
-# Ожидается список из 4 заведений (SJ), отсортированных по дистанции.
-GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.0833&radiusInKm=50
+### 4.1 Поиск по Провинции (Должен вернуть 2 объекта из SJ)
+GET {{base_url}}/api/discovery/search?provinceId={{provSJ}}&page=1&pageSize=10
 
-### 5.2 Доступные Провинции (радиус 15км)
-# Ожидается: Только San José.
-GET {{base_url}}/api/discovery/provinces?lat=9.9333&lon=-84.0833&radiusInKm=15
+### 4.2 Поиск по Городу (Должен вернуть 1 объект из Alajuela)
+GET {{base_url}}/api/discovery/search?cityId={{cityAlajuela}}
 
-### 5.3 Доступные Города (радиус 8км)
-# Ожидается: Только Escazú.
-GET {{base_url}}/api/discovery/cities?lat=9.9333&lon=-84.0833&radiusInKm=8
+### 4.3 Поиск по Категории (Должен вернуть 2 Отеля по всей стране)
+GET {{base_url}}/api/discovery/search?categoryId={{catHotel}}
 
-### 5.4 Доступные Теги (радиус 12км)
-# Ожидается: Pizza, WiFi, Parking.
-GET {{base_url}}/api/discovery/tags?lat=9.9333&lon=-84.0833&radiusInKm=12
+### 4.4 Поиск по Категории + Провинции (Только Отель в Сан-Хосе)
+GET {{base_url}}/api/discovery/search?categoryId={{catHotel}}&provinceId={{provSJ}}
 
 
-############################################################
-### ЭТАП 6: УМНЫЙ ПОИСК (FACETED / DRILL-DOWN) БЕЗ ГЕО
-############################################################
+### ============================================================
+### 5. ТЕСТИРОВАНИЕ ГЕО-ЛОКАЦИИ (ДИСТАНЦИЯ)
+### ============================================================
 
-### 6.1 Выбор Провинции (SJ) -> Результаты
-# Ожидаемые города: Escazu, Santa Ana. Ожидаемые страницы: 4 объекта.
-GET {{base_url}}/api/discovery/search?provinceId={{idSJ}}
+### 5.1 Точка в Escazu, радиус 2км (Должен найти 2 объекта: Пиццерия и Отель SJ)
+GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.1460&radiusInKm=2
 
-### 6.2 Выбор Провинции (SJ) -> Какие города доступны?
-GET {{base_url}}/api/discovery/cities?provinceId={{idSJ}}
+### 5.2 Точка в Escazu, радиус 20км (Должен найти ВСЕ 3 объекта, включая Алахуэлу)
+GET {{base_url}}/api/discovery/search?lat=9.9333&lon=-84.1460&radiusInKm=20
 
-### 6.3 Выбор Провинции (SJ) + Города (Santa Ana) -> Какие теги доступны?
-# Ожидается: Pizza, WiFi, Parking (те теги, что есть у Santa Ana).
-GET {{base_url}}/api/discovery/tags?provinceId={{idSJ}}&cityId={{idSantaAna}}
-
-### 6.4 Выбор Провинции (SJ) + Города (Santa Ana) + Тега (Pizza) -> Страницы
-# Ожидается: 1 страница (Santa Ana Pizza Place).
-GET {{base_url}}/api/discovery/search?provinceId={{idSJ}}&cityId={{idSantaAna}}&tagIds={{idPizza}}
-
-### 6.5 Проверка "оставшихся тегов" для 6.4
-# Какие теги еще можно выбрать в Santa Ana, если уже выбрана Pizza? 
-# Т.к. у "Santa Ana Pizza Place" других тегов нет, список может быть пуст или ограничен.
-GET {{base_url}}/api/discovery/tags?provinceId={{idSJ}}&cityId={{idSantaAna}}&tagIds={{idPizza}}
-
-### 6.6 Выбор Тега (WiFi) -> Доступные Провинции
-# Должны вернуться обе: SJ и Alajuela.
-GET {{base_url}}/api/discovery/provinces?tagIds={{idWiFi}}
+### 5.3 Проверка сортировки по дистанции 
+# Объекты в ответе должны идти в порядке: Luxury Hotel (ближайший), Pizza Palace, Airport Stay (дальний)
+GET {{base_url}}/api/discovery/search?lat=9.9360&lon=-84.1490
