@@ -27,11 +27,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             if (@params.RadiusInKm.HasValue)
             {
                 var radiusMeters = @params.RadiusInKm.Value * 1000;
-
-                // БЫЛО (возвращает градусы, а не метры):
-                // query = query.Where(b => b.Location.Distance(userPoint) <= radiusMeters);
-
-                // СТАЛО (geography cast — PostGIS считает в метрах по сфере):
                 query = query.Where(b => EF.Functions.IsWithinDistance(b.Location, userPoint, radiusMeters, true));
             }
         }
@@ -46,10 +41,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
 
         if (userPoint != null)
         {
-            // БЫЛО (возвращает градусы, а не метры):
-            // itemsQuery = itemsQuery.OrderBy(b => b.Location.Distance(userPoint));
-
-            // СТАЛО (geography cast — сортировка по реальному расстоянию в метрах):
             itemsQuery = itemsQuery.OrderBy(b => EF.Functions.Distance(b.Location, userPoint, true));
         }
         else
@@ -59,24 +50,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
 
         var skip = (@params.Page - 1) * @params.PageSize;
 
-        // БЫЛО (расстояние считалось в памяти после ToList, в градусах):
-        // var items = await itemsQuery
-        //     .Skip(skip)
-        //     .Take(@params.PageSize)
-        //     .ToListAsync(ct);
-        //
-        // var dtos = items.Select(b => new BusinessPageCardDto(
-        //     b.Name,
-        //     b.Slug,
-        //     b.Media.FirstOrDefault()?.FileName != null ? $"/media/{b.Media.First().FileName}" : null,
-        //     b.City?.Name,
-        //     b.Province?.Name,
-        //     b.PrimaryCategory?.NameEn,
-        //     new GeoPointDto(b.Location.Y, b.Location.X),
-        //     userPoint != null ? b.Location.Distance(userPoint) / 1000 : null
-        // ));
-
-        // СТАЛО (расстояние считается в SQL через geography, результат уже в километрах):
         var rawData = await itemsQuery
             .Skip(skip)
             .Take(@params.PageSize)
@@ -106,7 +79,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
     public async Task<IEnumerable<ProvinceResponseDto>> GetAvailableProvincesAsync(DiscoverySearchParams @params, CancellationToken ct = default)
     {
         var query = db.BusinessPages.AsNoTracking().Where(b => b.IsPublished);
-
         var filteredParams = @params with { ProvinceId = null, CityId = null };
         query = ApplyDiscoveryFilters(query, filteredParams);
         query = ApplyGeoFilter(query, filteredParams);
@@ -123,7 +95,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
     public async Task<IEnumerable<CityResponseDto>> GetAvailableCitiesAsync(DiscoverySearchParams @params, CancellationToken ct = default)
     {
         var query = db.BusinessPages.AsNoTracking().Where(b => b.IsPublished);
-
         query = ApplyDiscoveryFilters(query, @params);
         query = ApplyGeoFilter(query, @params);
 
@@ -139,7 +110,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
     public async Task<IEnumerable<TagResponseDto>> GetAvailableTagsAsync(DiscoverySearchParams @params, CancellationToken ct = default)
     {
         var query = db.BusinessPages.AsNoTracking().Where(b => b.IsPublished);
-
         var filteredParams = @params with { TagIds = null };
         query = ApplyDiscoveryFilters(query, filteredParams);
         query = ApplyGeoFilter(query, filteredParams);
@@ -148,7 +118,7 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
             .SelectMany(b => b.Tags)
             .Distinct()
             .OrderBy(t => t.NameEn)
-            .Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId))
+            .Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId, null))
             .ToListAsync(ct);
     }
 
@@ -169,20 +139,12 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
 
     private IQueryable<BusinessPage> ApplyDiscoveryFilters(IQueryable<BusinessPage> query, DiscoverySearchParams p)
     {
-        if (p.ProvinceId.HasValue)
-            query = query.Where(b => b.ProvinceId == p.ProvinceId.Value);
-
-        if (p.CityId.HasValue)
-            query = query.Where(b => b.CityId == p.CityId.Value);
-
+        if (p.ProvinceId.HasValue) query = query.Where(b => b.ProvinceId == p.ProvinceId.Value);
+        if (p.CityId.HasValue) query = query.Where(b => b.CityId == p.CityId.Value);
         if (p.TagIds != null && p.TagIds.Any())
         {
-            foreach (var tagId in p.TagIds)
-            {
-                query = query.Where(b => b.Tags.Any(t => t.Id == tagId));
-            }
+            foreach (var tagId in p.TagIds) query = query.Where(b => b.Tags.Any(t => t.Id == tagId));
         }
-
         return query;
     }
 
@@ -192,11 +154,6 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
         {
             var userPoint = _geometryFactory.CreatePoint(new Coordinate(p.Lon.Value, p.Lat.Value));
             var radiusMeters = p.RadiusInKm.Value * 1000;
-
-            // БЫЛО (возвращает градусы, а не метры):
-            // query = query.Where(b => b.Location.Distance(userPoint) <= radiusMeters);
-
-            // СТАЛО (geography cast — PostGIS считает в метрах по сфере):
             query = query.Where(b => EF.Functions.IsWithinDistance(b.Location, userPoint, radiusMeters, true));
         }
         return query;
@@ -209,8 +166,8 @@ public class DiscoveryService(DirectoryDbContext db) : IDiscoveryService
         b.PrimaryCategoryId, b.PrimaryCategory?.NameEn,
         b.SecondaryCategories.Select(c => new GoogleCategoryResponseDto(c.Id, c.Gcid, c.NameEn, c.NameEs)),
         b.Contacts, b.Schedule, b.Seo,
-        b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId)),
-        b.Media.Select(m => new MediaAssetResponseDto(m.Id, m.Slug, m.FileName, m.ContentType, m.AltTextEn, m.AltTextEs, $"/media/{m.FileName}", m.CreatedAt, new List<Guid> { b.Id })),
+        b.Tags.Select(t => new TagResponseDto(t.Id, t.NameEn, t.NameEs, t.Slug, t.TagGroupId, null)),
+        b.Media.Select(m => new MediaAssetResponseDto(m.Id, m.Slug, m.FileName, m.ContentType, m.AltTextEn, m.AltTextEs, $"/media/{m.FileName}", m.CreatedAt, [])),
         b.CreatedAt, b.UpdatedAt
     );
 }
